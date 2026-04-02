@@ -29,7 +29,7 @@ try {
         $params = [];
         if ($tahun) { $sql .= " AND l.tahun = ?"; $params[] = $tahun; }
         if ($tipe)  { $sql .= " AND l.tipe = ?";  $params[] = $tipe; }
-        $sql .= " ORDER BY l.tahun DESC, l.tipe ASC, l.created_at DESC";
+        $sql .= " ORDER BY l.tahun DESC, l.tipe ASC, l.uploaded_at DESC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
