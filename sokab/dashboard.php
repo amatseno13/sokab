@@ -1521,7 +1521,7 @@ $username  = $user['username'];
                                     <button id="ikssFilterTW3" class="ikss-tw-btn" data-tw="TW III" style="padding: 0.5rem 1rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem; background: white; color: #64748b; cursor: pointer;">TW III</button>
                                     <button id="ikssFilterTW4" class="ikss-tw-btn" data-tw="TW IV" style="padding: 0.5rem 1rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem; background: white; color: #64748b; cursor: pointer;">TW IV</button>
                                     <?php if($user_role==='admin'): ?>
-                                    <button onclick="manageIKSSMaster()" style="padding: 0.5rem 1rem; background: #16a34a; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500;">⚙️ Kelola IKSS</button>
+                                    <button onclick="kelolaIKSS()" style="padding: 0.5rem 1rem; background: #16a34a; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500;">⚙️ Kelola IKSS</button>
                                     <?php endif; ?>
                                 </div>
                             </div>
@@ -2650,16 +2650,32 @@ $username  = $user['username'];
         // ── LAKIN UPLOAD ────────────────────────────────
         function loadLakinContent(tipe) {
             const container = document.getElementById('content-lakin-' + tipe);
-            if (!container) return;
+            if (!container) {
+                console.error('LAKIN container not found:', 'content-lakin-' + tipe);
+                return;
+            }
             container.innerHTML = '<div class="loading-state">⏳ Memuat file...</div>';
 
+            console.log(`📥 Loading LAKIN ${tipe}...`);
             fetch(`api/lakin.php?tipe=${tipe}`)
-                .then(r => r.json())
+                .then(r => {
+                    console.log('LAKIN response status:', r.status);
+                    return r.json();
+                })
                 .then(res => {
+                    console.log('LAKIN data:', res);
                     if (res.success) {
                         lakinCache[tipe] = res.data;
+                        console.log(`✅ LAKIN ${tipe}: ${res.data.length} files loaded`);
                         renderLakinList(tipe, res.data);
+                    } else {
+                        console.error('LAKIN error:', res.message);
+                        container.innerHTML = `<div class="loading-state">⚠️ Gagal memuat: ${escHtml(res.message || 'Unknown error')}</div>`;
                     }
+                })
+                .catch(err => {
+                    console.error('LAKIN fetch error:', err);
+                    container.innerHTML = `<div class="loading-state">⚠️ Koneksi gagal. Cek Console (F12) untuk detail.</div>`;
                 });
         }
 
