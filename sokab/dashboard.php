@@ -1340,6 +1340,12 @@ $username  = $user['username'];
                         <div class="menu-text"><h3>Monitoring Capaian Renstra</h3><p>Capaian Akhir Renstra</p></div>
                     </div>
                 </div>
+                <div class="menu-item menu-sub">
+                    <div class="menu-link" onclick="showPage('permindok')">
+                        <div class="menu-icon">📄</div>
+                        <div class="menu-text"><h3>Permintaan Dokumen</h3><p>Permindok by Tahun</p></div>
+                    </div>
+                </div>
 
 
 
@@ -1579,6 +1585,78 @@ $username  = $user['username'];
                 </div>
                 <div id="content-monitoring-renstra" class="gdrive-container">
                     <div class="loading-state">Memuat dokumen...</div>
+                </div>
+            </div>
+
+            <!-- ═══════════════════════════════ PERMINDOK ═══════════════════════════════ -->
+            <div id="page-permindok" class="content-page">
+                <div class="page-header-bar">
+                    <div class="page-header-icon" style="background:#dbeafe">📄</div>
+                    <div><h2 class="page-title">Permintaan Dokumen</h2><p class="page-subtitle">Kelola permintaan dokumen berdasarkan tahun</p></div>
+                </div>
+
+                <!-- Toolbar -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; padding: 1.5rem; background: white; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <div style="display: flex; gap: 1rem; align-items: center;">
+                        <label style="font-weight: 500; color: #64748b;">Tahun:</label>
+                        <select id="filterPermindokTahun" 
+                                onchange="loadPermindokData(this.value)"
+                                style="padding: 0.5rem 1rem; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.95rem; cursor: pointer;">
+                            <option value="2024">2024</option>
+                            <option value="2025">2025</option>
+                            <option value="2026" selected>2026</option>
+                            <option value="2027">2027</option>
+                        </select>
+                    </div>
+                    
+                    <?php if ($user_role === 'admin'): ?>
+                    <button onclick="kelolaPermindok()" 
+                            style="padding: 0.5rem 1rem; background: #16a34a; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500;">
+                        ⚙️ Kelola Permindok
+                    </button>
+                    <?php endif; ?>
+                </div>
+
+                <!-- Main Table -->
+                <div style="background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <!-- Pagination Controls Top -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                            <span style="color: #64748b; font-size: 0.875rem;">Tampilkan:</span>
+                            <select onchange="changePermindokRowsPerPage(this.value)" 
+                                    style="padding: 0.4rem 0.75rem; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; font-size: 0.875rem;">
+                                <option value="10">10</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                            </select>
+                            <span style="color: #64748b; font-size: 0.875rem;">per halaman</span>
+                        </div>
+                        <div id="permindokPaginationInfo" style="color: #64748b; font-size: 0.875rem;"></div>
+                    </div>
+
+                    <!-- Table -->
+                    <div style="overflow-x: auto;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <thead>
+                                <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                                    <th style="padding: 1rem; text-align: center; border-top-left-radius: 8px; width: 80px;">No</th>
+                                    <th style="padding: 1rem; text-align: center;">Judul Permindok</th>
+                                    <th style="padding: 1rem; text-align: center; border-top-right-radius: 8px; width: 200px;">Link Permindok</th>
+                                </tr>
+                            </thead>
+                            <tbody id="permindokTableBody">
+                                <tr>
+                                    <td colspan="3" style="text-align: center; padding: 2rem; color: #94a3b8;">
+                                        <div style="font-size: 3rem; margin-bottom: 1rem;">📄</div>
+                                        <div style="font-size: 1.1rem; font-weight: 500; color: #64748b;">Loading data...</div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination Controls Bottom -->
+                    <div style="display: flex; justify-content: center; align-items: center; margin-top: 1.5rem; gap: 0.5rem;" id="permindokPagination"></div>
                 </div>
             </div>
 
@@ -3282,8 +3360,150 @@ $username  = $user['username'];
         </div>
     </div>
 
-    <!-- Include IKSS Functions JavaScript -->
+    <!-- ═══════════════ MODAL: EDIT LINK PERMINDOK ═══════════════ -->
+    <div id="modalEditPermindokLink" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9998; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 12px; width: 90%; max-width: 600px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="font-size: 1.25rem; font-weight: 600; color: #1e293b; margin: 0;">Edit Link Permindok</h3>
+                <button onclick="closeModal('modalEditPermindokLink')" style="background: none; border: none; font-size: 1.5rem; color: #64748b; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">×</button>
+            </div>
+            <div style="padding: 1.5rem;">
+                <input type="hidden" id="editPermindokId">
+                
+                <div style="margin-bottom: 1rem; padding: 1rem; background: #f8fafc; border-radius: 6px;">
+                    <label style="display: block; font-weight: 500; color: #64748b; font-size: 0.875rem; margin-bottom: 0.25rem;">Judul:</label>
+                    <div id="editPermindokJudul" style="color: #1e293b; font-size: 1rem;"></div>
+                </div>
+                
+                <div style="margin-bottom: 1.5rem;">
+                    <label for="editPermindokLink" style="display: block; font-weight: 500; color: #475569; margin-bottom: 0.5rem; font-size: 0.9rem;">Link Permindok:</label>
+                    <input type="url" 
+                           id="editPermindokLink" 
+                           placeholder="https://drive.google.com/... atau https://onedrive.live.com/..."
+                           style="width: 100%; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem;">
+                    <small style="color: #64748b;">Kosongkan jika belum ada link</small>
+                </div>
+
+                <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                    <button onclick="closeModal('modalEditPermindokLink')" 
+                            style="padding: 0.75rem 1.5rem; background: #e2e8f0; color: #475569; border: none; border-radius: 8px; cursor: pointer; font-weight: 500;">
+                        Batal
+                    </button>
+                    <button onclick="savePermindokLink()" 
+                            style="padding: 0.75rem 1.5rem; background: #1e40af; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500;">
+                        💾 Simpan
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ MODAL: KELOLA PERMINDOK (ADMIN) ═══════════════ -->
+    <div id="modalKelolaPermindok" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9998; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 12px; width: 95%; max-width: 1200px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="font-size: 1.25rem; font-weight: 600; color: #1e293b; margin: 0;">⚙️ Kelola Permindok Master</h3>
+                <button onclick="closeModal('modalKelolaPermindok')" style="background: none; border: none; font-size: 1.5rem; color: #64748b; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">×</button>
+            </div>
+            <div style="padding: 1.5rem;">
+                <div style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+                    <p style="color: #64748b; margin: 0;">Kelola data master Permindok (tambah, edit, hapus)</p>
+                    <button onclick="showFormPermindok('create')" style="padding: 0.75rem 1.5rem; background: #16a34a; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500;">
+                        ➕ Tambah Permindok
+                    </button>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                        <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                            <tr>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600; color: #475569; width: 60px;">No</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600; color: #475569; width: 80px;">Tahun</th>
+                                <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #475569;">Judul</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600; color: #475569; width: 80px;">Link</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600; color: #475569; width: 80px;">Status</th>
+                                <th style="padding: 0.75rem; text-align: center; font-weight: 600; color: #475569; width: 140px;">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kelolaPermindokTableBody">
+                            <tr><td colspan="6" style="padding: 2rem; text-align: center; color: #94a3b8;">Memuat data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════ MODAL: FORM PERMINDOK (TAMBAH/EDIT) ═══════════════ -->
+    <div id="modalFormPermindok" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+        <div style="background: white; border-radius: 12px; width: 90%; max-width: 700px; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1);">
+            <div style="padding: 1.5rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+                <h3 id="formPermindokTitle" style="font-size: 1.25rem; font-weight: 600; color: #1e293b; margin: 0;">Tambah Permindok Baru</h3>
+                <button onclick="closeModal('modalFormPermindok')" style="background: none; border: none; font-size: 1.5rem; color: #64748b; cursor: pointer; padding: 0; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">×</button>
+            </div>
+            <div style="padding: 1.5rem;">
+                <input type="hidden" id="formPermindokMode">
+                <input type="hidden" id="formPermindokId">
+                
+                <div style="margin-bottom: 1rem;">
+                    <label for="formPermindokNomor" style="display: block; font-weight: 500; color: #475569; margin-bottom: 0.5rem; font-size: 0.9rem;">Nomor: <span style="color: #ef4444;">*</span></label>
+                    <input type="number" 
+                           id="formPermindokNomor" 
+                           min="1"
+                           placeholder="1"
+                           style="width: 100%; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem;">
+                </div>
+                
+                <div style="margin-bottom: 1rem;">
+                    <label for="formPermindokTahun" style="display: block; font-weight: 500; color: #475569; margin-bottom: 0.5rem; font-size: 0.9rem;">Tahun: <span style="color: #ef4444;">*</span></label>
+                    <input type="number" 
+                           id="formPermindokTahun" 
+                           min="2020" 
+                           max="2030"
+                           placeholder="2026"
+                           style="width: 100%; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem;">
+                </div>
+                
+                <div style="margin-bottom: 1rem;">
+                    <label for="formPermindokJudul" style="display: block; font-weight: 500; color: #475569; margin-bottom: 0.5rem; font-size: 0.9rem;">Judul Permindok: <span style="color: #ef4444;">*</span></label>
+                    <textarea id="formPermindokJudul" 
+                              rows="3"
+                              placeholder="Contoh: Permintaan Data Statistik Kependudukan Triwulan I 2026"
+                              style="width: 100%; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem; resize: vertical;"></textarea>
+                </div>
+                
+                <div style="margin-bottom: 1.5rem;">
+                    <label for="formPermindokLink" style="display: block; font-weight: 500; color: #475569; margin-bottom: 0.5rem; font-size: 0.9rem;">Link Permindok:</label>
+                    <input type="url" 
+                           id="formPermindokLink" 
+                           placeholder="https://drive.google.com/... (opsional)"
+                           style="width: 100%; padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.9rem;">
+                    <small style="color: #64748b;">Bisa dikosongkan, dapat diisi kemudian</small>
+                </div>
+
+                <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
+                    <button onclick="closeModal('modalFormPermindok')" 
+                            style="padding: 0.75rem 1.5rem; background: #e2e8f0; color: #475569; border: none; border-radius: 8px; cursor: pointer; font-weight: 500;">
+                        Batal
+                    </button>
+                    <button onclick="saveFormPermindok()" 
+                            style="padding: 0.75rem 1.5rem; background: #1e40af; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 500;">
+                        💾 Simpan
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include JavaScript -->
     <script src="assets/js/ikss_functions.js"></script>
+    <script src="assets/js/permindok_functions.js"></script>
+
+    <!-- Helper function for closing modals -->
+    <script>
+        function closeModal(modalId) {
+            document.getElementById(modalId).style.display = 'none';
+        }
+    </script>
 
     <!-- CSS Animation untuk loading spinner -->
     <style>
