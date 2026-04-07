@@ -1340,12 +1340,6 @@ $username  = $user['username'];
                         <div class="menu-text"><h3>Monitoring Capaian Renstra</h3><p>Capaian Akhir Renstra</p></div>
                     </div>
                 </div>
-                <div class="menu-item menu-sub">
-                    <div class="menu-link" onclick="showPage('permindok')">
-                        <div class="menu-icon">📄</div>
-                        <div class="menu-text"><h3>Permintaan Dokumen</h3><p>Permindok by Tahun</p></div>
-                    </div>
-                </div>
 
 
 
@@ -1366,9 +1360,9 @@ $username  = $user['username'];
                 <!-- EVALUASI (header) -->
                 <div class="menu-section-header">🔍 Evaluasi</div>
                 <div class="menu-item menu-sub">
-                    <div class="menu-link" onclick="showPage('evaluasi-permindok')">
-                        <div class="menu-icon">📑</div>
-                        <div class="menu-text"><h3>Permindok</h3><p></p></div>
+                    <div class="menu-link" onclick="showPage('permindok')">
+                        <div class="menu-icon">📄</div>
+                        <div class="menu-text"><h3>Permintaan Dokumen</h3><p>Permindok by Tahun</p></div>
                     </div>
                 </div>
                 <!-- -->
@@ -1602,11 +1596,21 @@ $username  = $user['username'];
                         <select id="filterPermindokTahun" 
                                 onchange="loadPermindokData(this.value)"
                                 style="padding: 0.5rem 1rem; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.95rem; cursor: pointer;">
-                            <option value="2024">2024</option>
-                            <option value="2025">2025</option>
-                            <option value="2026" selected>2026</option>
-                            <option value="2027">2027</option>
                         </select>
+                        <script>
+                        // Populate tahun IMMEDIATELY (inline)
+                        (function() {
+                            const sel = document.getElementById('filterPermindokTahun');
+                            const cy = new Date().getFullYear();
+                            for (let y = cy + 5; y >= 2020; y--) {
+                                const opt = document.createElement('option');
+                                opt.value = y;
+                                opt.text = y;
+                                if (y === cy) opt.selected = true;
+                                sel.add(opt);
+                            }
+                        })();
+                        </script>
                     </div>
                     
                     <?php if ($user_role === 'admin'): ?>
@@ -1639,14 +1643,14 @@ $username  = $user['username'];
                         <table style="width: 100%; border-collapse: collapse;">
                             <thead>
                                 <tr style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                                    <th style="padding: 1rem; text-align: center; border-top-left-radius: 8px; width: 80px;">No</th>
-                                    <th style="padding: 1rem; text-align: center;">Judul Permindok</th>
-                                    <th style="padding: 1rem; text-align: center; border-top-right-radius: 8px; width: 200px;">Link Permindok</th>
+                                    <th style="padding: 1rem; text-align: center; border-top-left-radius: 8px; width: 80px; font-size: 0.9rem;">No</th>
+                                    <th style="padding: 1rem; text-align: center; font-size: 0.9rem;">Judul Permindok</th>
+                                    <th style="padding: 1rem; text-align: center; border-top-right-radius: 8px; width: 250px; font-size: 0.9rem;">Link Permindok</th>
                                 </tr>
                             </thead>
-                            <tbody id="permindokTableBody">
+                            <tbody id="permindokTableBody" style="background: white;">
                                 <tr>
-                                    <td colspan="3" style="text-align: center; padding: 2rem; color: #94a3b8;">
+                                    <td colspan="3" style="text-align: center; padding: 3rem; color: #94a3b8;">
                                         <div style="font-size: 3rem; margin-bottom: 1rem;">📄</div>
                                         <div style="font-size: 1.1rem; font-weight: 500; color: #64748b;">Loading data...</div>
                                     </td>
