@@ -1,237 +1,269 @@
 <?php
-/**
- * API untuk Evaluasi Permindok
- * Handle upload, list, dan delete dokumen evaluasi permindok
- */
+// api/permindok.php - API untuk Permintaan Dokumen
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // Disable display untuk production
 
-session_start();
-require_once '../config/database.php';
-
-header('Content-Type: application/json');
-
-// Check login
-if (!isset($_SESSION['user_id'])) {
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
-    exit;
+// Start session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
 }
 
-$user_id = $_SESSION['user_id'];
-$user_role = $_SESSION['user_role'] ?? 'user';
+// Set JSON header
+header('Content-Type: application/json; charset=utf-8');
 
-$action = $_GET['action'] ?? $_POST['action'] ?? '';
+// Function to send JSON response
+function sendJSON($data) {
+    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    exit();
+}
+
+// Function to log errors
+function logError($message) {
+    error_log("[PERMINDOK API] " . $message);
+}
 
 try {
-    switch ($action) {
-        case 'list':
-            // Get all documents
-            $sql = "SELECT * FROM evaluasi_permindok ORDER BY tahun DESC, upload_date DESC";
-            $stmt = $pdo->query($sql);
-            $docs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-            echo json_encode([
-                'success' => true,
-                'data' => $docs
-            ]);
-            break;
-            
-        case 'upload':
-            // Only admin can upload
-            if ($user_role !== 'admin') {
-                echo json_encode(['success' => false, 'message' => 'Akses ditolak. Hanya Admin yang bisa upload.']);
-                exit;
-            }
-            
-            $judul = $_POST['judul'] ?? '';
-            $tahun = $_POST['tahun'] ?? date('Y');
-            $upload_method = $_POST['upload_method'] ?? 'file';
-            
-            if (empty($judul)) {
-                echo json_encode(['success' => false, 'message' => 'Judul harus diisi']);
-                exit;
-            }
-            
-            $file_path = null;
-            $gdrive_link = null;
-            $filename = null;
-            $original_name = null;
-            $filesize = null;
-            
-            if ($upload_method === 'file') {
-                // Handle file upload
-                
-                // Check if file was uploaded
-                if (!isset($_FILES['file'])) {
-                    echo json_encode(['success' => false, 'message' => 'File tidak ditemukan. Pastikan field name="file"']);
-                    exit;
-                }
-                
-                $file = $_FILES['file'];
-                
-                // Check for upload errors
-                if ($file['error'] !== UPLOAD_ERR_OK) {
-                    $error_messages = [
-                        UPLOAD_ERR_INI_SIZE => 'File melebihi batas upload_max_filesize di php.ini',
-                        UPLOAD_ERR_FORM_SIZE => 'File melebihi batas MAX_FILE_SIZE',
-                        UPLOAD_ERR_PARTIAL => 'File hanya terupload sebagian',
-                        UPLOAD_ERR_NO_FILE => 'Tidak ada file yang diupload',
-                        UPLOAD_ERR_NO_TMP_DIR => 'Folder temporary tidak ditemukan',
-                        UPLOAD_ERR_CANT_WRITE => 'Gagal menulis file ke disk',
-                        UPLOAD_ERR_EXTENSION => 'Upload dihentikan oleh extension'
-                    ];
-                    $error_msg = $error_messages[$file['error']] ?? 'Error upload: ' . $file['error'];
-                    echo json_encode(['success' => false, 'message' => $error_msg]);
-                    exit;
-                }
-                
-                // Check file size
-                $max_size = 20 * 1024 * 1024; // 20MB
-                if ($file['size'] > $max_size) {
-                    echo json_encode(['success' => false, 'message' => 'Ukuran file maksimal 20MB (File Anda: ' . round($file['size']/1024/1024, 2) . 'MB)']);
-                    exit;
-                }
-                
-                if ($file['size'] == 0) {
-                    echo json_encode(['success' => false, 'message' => 'File kosong (0 bytes)']);
-                    exit;
-                }
-                
-                // Check file extension
-                $allowed_ext = ['pdf'];
-                $file_ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-                
-                if (!in_array($file_ext, $allowed_ext)) {
-                    echo json_encode(['success' => false, 'message' => 'Hanya file PDF yang diperbolehkan (File Anda: .' . $file_ext . ')']);
-                    exit;
-                }
-                
-                // Create upload directory if not exists
-                $upload_dir = dirname(__DIR__) . '/uploads/permindok/';
-                if (!is_dir($upload_dir)) {
-                    if (!mkdir($upload_dir, 0777, true)) {
-                        echo json_encode(['success' => false, 'message' => 'Gagal membuat folder: ' . $upload_dir]);
-                        exit;
-                    }
-                    chmod($upload_dir, 0777);
-                }
-                
-                // Check if directory is writable
-                if (!is_writable($upload_dir)) {
-                    echo json_encode(['success' => false, 'message' => 'Folder tidak writable: ' . $upload_dir . ' - Jalankan: chmod 777 uploads/permindok/']);
-                    exit;
-                }
-                
-                // Generate unique filename
-                $filename = 'permindok_' . $tahun . '_' . time() . '_' . uniqid() . '.' . $file_ext;
-                $upload_path = $upload_dir . $filename;
-                
-                // Debug info
-                if (!is_uploaded_file($file['tmp_name'])) {
-                    echo json_encode(['success' => false, 'message' => 'File temporary tidak valid: ' . $file['tmp_name']]);
-                    exit;
-                }
-                
-                // Move uploaded file
-                if (!move_uploaded_file($file['tmp_name'], $upload_path)) {
-                    $error = error_get_last();
-                    echo json_encode(['success' => false, 'message' => 'Gagal move file dari ' . $file['tmp_name'] . ' ke ' . $upload_path . '. Error: ' . ($error['message'] ?? 'unknown')]);
-                    exit;
-                }
-                
-                // Verify file was actually moved
-                if (!file_exists($upload_path)) {
-                    echo json_encode(['success' => false, 'message' => 'File tidak ditemukan setelah upload: ' . $upload_path]);
-                    exit;
-                }
-                
-                $file_path = 'uploads/permindok/' . $filename;
-                $original_name = $file['name'];
-                $filesize = $file['size'];
-                
-            } else {
-                // Handle Google Drive link
-                $gdrive_link = $_POST['gdrive_link'] ?? '';
-                
-                if (empty($gdrive_link)) {
-                    echo json_encode(['success' => false, 'message' => 'Link Google Drive harus diisi']);
-                    exit;
-                }
-                
-                // Validate URL
-                if (!filter_var($gdrive_link, FILTER_VALIDATE_URL)) {
-                    echo json_encode(['success' => false, 'message' => 'URL tidak valid. Format: https://drive.google.com/...']);
-                    exit;
-                }
-            }
-            
-            // Insert to database
-            $sql = "INSERT INTO evaluasi_permindok (judul, tahun, upload_method, file_path, gdrive_link, filename, original_name, filesize, uploaded_by) 
-                    VALUES (:judul, :tahun, :upload_method, :file_path, :gdrive_link, :filename, :original_name, :filesize, :uploaded_by)";
-            
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute([
-                'judul' => $judul,
-                'tahun' => $tahun,
-                'upload_method' => $upload_method,
-                'file_path' => $file_path,
-                'gdrive_link' => $gdrive_link,
-                'filename' => $filename,
-                'original_name' => $original_name,
-                'filesize' => $filesize,
-                'uploaded_by' => $user_id
-            ]);
-            
-            echo json_encode([
-                'success' => true,
-                'message' => 'Dokumen berhasil diupload'
-            ]);
-            break;
-            
-        case 'delete':
-            // Only admin can delete
-            if ($user_role !== 'admin') {
-                echo json_encode(['success' => false, 'message' => 'Akses ditolak']);
-                exit;
-            }
-            
-            $id = $_POST['id'] ?? 0;
-            
-            // Get file info first
-            $sql = "SELECT * FROM evaluasi_permindok WHERE id = :id";
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute(['id' => $id]);
-            $doc = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$doc) {
-                echo json_encode(['success' => false, 'message' => 'Dokumen tidak ditemukan']);
-                exit;
-            }
-            
-            // Delete file if exists
-            if ($doc['upload_method'] === 'file' && !empty($doc['file_path'])) {
-                $file_path = '../' . $doc['file_path'];
-                if (file_exists($file_path)) {
-                    unlink($file_path);
-                }
-            }
-            
-            // Delete from database
-            $sql = "DELETE FROM evaluasi_permindok WHERE id = :id";
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute(['id' => $id]);
-            
-            echo json_encode([
-                'success' => true,
-                'message' => 'Dokumen berhasil dihapus'
-            ]);
-            break;
-            
-        default:
-            echo json_encode(['success' => false, 'message' => 'Invalid action']);
+    // Check database config
+    $config_file = __DIR__ . '/../config/database.php';
+    if (!file_exists($config_file)) {
+        sendJSON([
+            'success' => false,
+            'message' => 'Database configuration file not found'
+        ]);
+    }
+    
+    require_once $config_file;
+    
+    // Get database connection
+    try {
+        $pdo = getDBConnection();
+    } catch (Exception $e) {
+        logError("Database connection failed: " . $e->getMessage());
+        sendJSON([
+            'success' => false,
+            'message' => 'Database connection failed'
+        ]);
+    }
+    
+    // Check authentication
+    $isAdmin = isset($_SESSION['role']) && $_SESSION['role'] === 'admin';
+    
+    // Get request method and action
+    $method = $_SERVER['REQUEST_METHOD'];
+    $action = isset($_GET['action']) ? $_GET['action'] : '';
+    
+    // ==================== GET: List Permindok ====================
+    if ($method === 'GET' && $action === 'list') {
+        $tahun = isset($_GET['tahun']) ? intval($_GET['tahun']) : null;
+        
+        $sql = "SELECT 
+                    p.id,
+                    p.nomor,
+                    p.tahun,
+                    p.judul,
+                    p.link_permindok,
+                    p.created_at,
+                    p.updated_at
+                FROM permindok p
+                WHERE p.is_active = 1";
+        
+        $params = array();
+        if ($tahun) {
+            $sql .= " AND p.tahun = ?";
+            $params[] = $tahun;
+        }
+        
+        $sql .= " ORDER BY p.tahun DESC, p.nomor ASC";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        sendJSON([
+            'success' => true,
+            'data' => $data,
+            'tahun' => $tahun,
+            'count' => count($data)
+        ]);
+    }
+    
+    // ==================== GET: Detail Permindok ====================
+    elseif ($method === 'GET' && $action === 'detail') {
+        $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
+        
+        if (!$id) {
+            sendJSON(['success' => false, 'message' => 'ID tidak valid']);
+        }
+        
+        $stmt = $pdo->prepare("SELECT * FROM permindok WHERE id = ?");
+        $stmt->execute([$id]);
+        $data = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($data) {
+            sendJSON(['success' => true, 'data' => $data]);
+        } else {
+            sendJSON(['success' => false, 'message' => 'Data tidak ditemukan']);
+        }
+    }
+    
+    // ==================== POST: Update Link ====================
+    elseif ($method === 'POST' && $action === 'update_link') {
+        if (!$isAdmin) {
+            sendJSON(['success' => false, 'message' => 'Akses ditolak. Hanya admin yang dapat mengubah link.']);
+        }
+        
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true);
+        
+        if (!$data) {
+            sendJSON(['success' => false, 'message' => 'Invalid JSON input']);
+        }
+        
+        $id = isset($data['id']) ? intval($data['id']) : 0;
+        $link = isset($data['link_permindok']) ? trim($data['link_permindok']) : '';
+        
+        if (!$id) {
+            sendJSON(['success' => false, 'message' => 'ID tidak valid']);
+        }
+        
+        // Validasi URL (opsional)
+        if ($link && !filter_var($link, FILTER_VALIDATE_URL)) {
+            sendJSON(['success' => false, 'message' => 'Format URL tidak valid']);
+        }
+        
+        $stmt = $pdo->prepare("UPDATE permindok SET link_permindok = ? WHERE id = ?");
+        $result = $stmt->execute([$link, $id]);
+        
+        sendJSON(['success' => true, 'message' => 'Link berhasil diperbarui']);
+    }
+    
+    // ==================== GET: List All (Admin) ====================
+    elseif ($method === 'GET' && $action === 'list_all') {
+        if (!$isAdmin) {
+            sendJSON(['success' => false, 'message' => 'Akses ditolak']);
+        }
+        
+        $stmt = $pdo->query("
+            SELECT * FROM permindok 
+            ORDER BY is_active DESC, tahun DESC, nomor ASC
+        ");
+        $data = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        sendJSON(['success' => true, 'data' => $data]);
+    }
+    
+    // ==================== POST: Create Permindok ====================
+    elseif ($method === 'POST' && $action === 'create') {
+        if (!$isAdmin) {
+            sendJSON(['success' => false, 'message' => 'Akses ditolak']);
+        }
+        
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true);
+        
+        $nomor = isset($data['nomor']) ? intval($data['nomor']) : 0;
+        $tahun = isset($data['tahun']) ? intval($data['tahun']) : 0;
+        $judul = isset($data['judul']) ? trim($data['judul']) : '';
+        $link = isset($data['link_permindok']) ? trim($data['link_permindok']) : '';
+        
+        if (!$nomor || !$tahun || !$judul) {
+            sendJSON(['success' => false, 'message' => 'Nomor, tahun, dan judul harus diisi']);
+        }
+        
+        // Check duplicate
+        $check = $pdo->prepare("SELECT id FROM permindok WHERE nomor = ? AND tahun = ? AND is_active = 1");
+        $check->execute([$nomor, $tahun]);
+        if ($check->fetch()) {
+            sendJSON(['success' => false, 'message' => "Nomor $nomor untuk tahun $tahun sudah ada"]);
+        }
+        
+        $userId = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : null;
+        
+        $stmt = $pdo->prepare("
+            INSERT INTO permindok (nomor, tahun, judul, link_permindok, created_by)
+            VALUES (?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([$nomor, $tahun, $judul, $link, $userId]);
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Permindok berhasil ditambahkan',
+            'id' => $pdo->lastInsertId()
+        ]);
+    }
+    
+    // ==================== POST: Update Permindok ====================
+    elseif ($method === 'POST' && $action === 'update') {
+        if (!$isAdmin) {
+            sendJSON(['success' => false, 'message' => 'Akses ditolak']);
+        }
+        
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true);
+        
+        $id = isset($data['id']) ? intval($data['id']) : 0;
+        $nomor = isset($data['nomor']) ? intval($data['nomor']) : 0;
+        $tahun = isset($data['tahun']) ? intval($data['tahun']) : 0;
+        $judul = isset($data['judul']) ? trim($data['judul']) : '';
+        $link = isset($data['link_permindok']) ? trim($data['link_permindok']) : '';
+        
+        if (!$id || !$nomor || !$tahun || !$judul) {
+            sendJSON(['success' => false, 'message' => 'Semua field harus diisi']);
+        }
+        
+        // Check duplicate
+        $check = $pdo->prepare("SELECT id FROM permindok WHERE nomor = ? AND tahun = ? AND id != ? AND is_active = 1");
+        $check->execute([$nomor, $tahun, $id]);
+        if ($check->fetch()) {
+            sendJSON(['success' => false, 'message' => "Nomor $nomor untuk tahun $tahun sudah digunakan"]);
+        }
+        
+        $stmt = $pdo->prepare("
+            UPDATE permindok 
+            SET nomor = ?, tahun = ?, judul = ?, link_permindok = ?
+            WHERE id = ?
+        ");
+        $stmt->execute([$nomor, $tahun, $judul, $link, $id]);
+        
+        sendJSON(['success' => true, 'message' => 'Permindok berhasil diperbarui']);
+    }
+    
+    // ==================== POST: Delete (Soft) ====================
+    elseif ($method === 'POST' && $action === 'delete') {
+        if (!$isAdmin) {
+            sendJSON(['success' => false, 'message' => 'Akses ditolak']);
+        }
+        
+        $input = file_get_contents('php://input');
+        $data = json_decode($input, true);
+        
+        $id = isset($data['id']) ? intval($data['id']) : 0;
+        
+        if (!$id) {
+            sendJSON(['success' => false, 'message' => 'ID tidak valid']);
+        }
+        
+        $stmt = $pdo->prepare("UPDATE permindok SET is_active = 0 WHERE id = ?");
+        $stmt->execute([$id]);
+        
+        sendJSON(['success' => true, 'message' => 'Permindok berhasil dihapus']);
+    }
+    
+    // ==================== Invalid Action ====================
+    else {
+        sendJSON(['success' => false, 'message' => 'Action tidak valid: ' . $action]);
     }
     
 } catch (PDOException $e) {
-    echo json_encode([
+    logError("PDO Error: " . $e->getMessage());
+    sendJSON([
         'success' => false,
-        'message' => 'Database error: ' . $e->getMessage()
+        'message' => 'Database error occurred'
+    ]);
+} catch (Exception $e) {
+    logError("General Error: " . $e->getMessage());
+    sendJSON([
+        'success' => false,
+        'message' => 'An error occurred'
     ]);
 }
