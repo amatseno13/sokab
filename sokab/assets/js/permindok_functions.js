@@ -54,25 +54,28 @@ function renderPermindokTable() {
     }
     
     tbody.innerHTML = paginatedData.map(item => `
-        <tr>
-            <td style="text-align: center; font-weight: 500; color: #475569;">${item.nomor}</td>
-            <td style="text-align: justify; color: #1e293b;">${escapeHtml(item.judul)}</td>
-            <td style="text-align: center;">
-                ${item.link_permindok ? `
-                    <a href="${escapeHtml(item.link_permindok)}" 
-                       target="_blank" 
-                       style="color: #3b82f6; text-decoration: none; margin-right: 0.5rem;">
-                        🔗 Lihat
-                    </a>
-                ` : `
-                    <span style="color: #94a3b8;">Belum ada</span>
-                `}
-                ${isAdmin ? `
-                    <button onclick='editPermindokLink(${item.id}, ${JSON.stringify(item.judul)}, ${JSON.stringify(item.link_permindok || "")})' 
-                            style="padding: 0.25rem 0.75rem; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.875rem;">
-                        Edit
-                    </button>
-                ` : ''}
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 1rem; text-align: center; color: #64748b; font-weight: 500;">${item.nomor}</td>
+            <td style="padding: 1rem; color: #1e293b; line-height: 1.5; text-align: justify;">
+                <div style="font-size: 0.9rem;">${escapeHtml(item.judul)}</div>
+            </td>
+            <td style="padding: 0.5rem; vertical-align: middle;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    ${item.link_permindok ? `
+                        <a href="${escapeHtml(item.link_permindok)}" 
+                           target="_blank" 
+                           style="flex: 1; color: #2563eb; text-decoration: none; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                           title="${escapeHtml(item.link_permindok)}">
+                            🔗 Lihat
+                        </a>
+                    ` : `<span style="flex: 1; color: #94a3b8; font-size: 0.85rem;">Belum ada</span>`}
+                    ${isAdmin ? `
+                        <button onclick='editPermindokLink(${item.id}, ${JSON.stringify(item.judul)}, ${JSON.stringify(item.link_permindok || "")})' 
+                                style="padding: 0.35rem 0.75rem; background: #f59e0b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 0.75rem; white-space: nowrap; font-weight: 500;">
+                            Edit
+                        </button>
+                    ` : ''}
+                </div>
             </td>
         </tr>
     `).join('');
@@ -351,6 +354,29 @@ function escapeHtml(text) {
 
 // Auto-load on page ready
 document.addEventListener('DOMContentLoaded', function() {
+    // Populate tahun dropdown dinamis
+    const selectTahun = document.getElementById('filterPermindokTahun');
+    if (selectTahun) {
+        const currentYear = new Date().getFullYear();
+        const startYear = 2020;
+        const endYear = currentYear + 5; // 5 tahun ke depan
+        
+        // Clear existing options
+        selectTahun.innerHTML = '';
+        
+        // Generate options dari tahun terbaru ke terlama
+        for (let year = endYear; year >= startYear; year--) {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = year;
+            if (year === currentYear) {
+                option.selected = true;
+            }
+            selectTahun.appendChild(option);
+        }
+    }
+    
+    // Load data
     if (document.getElementById('permindokTableBody')) {
         loadPermindokData();
     }
