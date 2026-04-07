@@ -148,17 +148,17 @@ try {
                 $filesize = $file['size'];
                 
             } else {
-                // Handle cloud storage link
+                // Handle Google Drive link
                 $gdrive_link = $_POST['gdrive_link'] ?? '';
                 
                 if (empty($gdrive_link)) {
-                    echo json_encode(['success' => false, 'message' => 'Link Cloud Storage harus diisi']);
+                    echo json_encode(['success' => false, 'message' => 'Link Google Drive harus diisi']);
                     exit;
                 }
                 
                 // Validate URL
                 if (!filter_var($gdrive_link, FILTER_VALIDATE_URL)) {
-                    // Validasi dihapus - terima semua link
+                    echo json_encode(['success' => false, 'message' => 'URL tidak valid. Format: https://drive.google.com/...']);
                     exit;
                 }
             }
