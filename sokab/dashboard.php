@@ -17,7 +17,13 @@ $username  = $user['username'];
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SOKAB - SAKIP BPS Bima</title>
+    <title>SOKAB - SAKIP Online BPS Bima</title>
+
+     <!-- Favicon - Logo BPS Asli -->
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png">
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+    <link rel="shortcut icon" href="assets/favicon.ico">
+    
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link href='https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.css' rel='stylesheet' />
     <style>
