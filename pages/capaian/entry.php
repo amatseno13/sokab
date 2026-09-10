@@ -131,6 +131,14 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
 .target-item{background:var(--brand-tint);border:1px solid var(--brand-line);border-radius:var(--radius-sm);padding:.55rem .9rem;font-size:.82rem;color:var(--ink-soft)}
 .target-item b{color:var(--brand-dark)}
 
+/* ── Navigasi Tab (Bagian 1-4 tidak menumpuk sekaligus) ── */
+.tab-nav{display:flex;gap:.6rem;flex-wrap:wrap;margin-bottom:1.5rem}
+.tab-nav-btn{background:var(--paper);border:1px solid var(--line);color:var(--ink-soft);padding:.65rem 1.15rem;border-radius:99px;font-weight:600;font-size:.85rem;cursor:pointer;transition:.15s;box-shadow:var(--shadow);font-family:inherit;white-space:nowrap}
+.tab-nav-btn:hover{border-color:var(--brand);color:var(--brand-dark)}
+.tab-nav-btn.active{background:var(--brand);border-color:var(--brand);color:#fff;box-shadow:0 4px 14px -4px rgba(230,126,34,.5)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
+
 /* ── Section ── */
 .section{background:var(--paper);border-radius:var(--radius);padding:1.5rem 1.6rem;margin-bottom:1.5rem;box-shadow:var(--shadow)}
 .section-title{font-size:.92rem;font-weight:700;color:var(--ink);margin-bottom:1.3rem;padding-bottom:.85rem;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:.55rem;letter-spacing:-.01em}
@@ -259,16 +267,25 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
             <div class="target-item">Alokasi TW <?= $tw ?>: <b><?= number_format($alokasi_tw, 2) ?> <?= htmlspecialchars($master['satuan']) ?></b></div>
         </div>
         <div style="margin-top:1.1rem">
-            <button type="button" class="btn-doksum" id="btn-doksum"
-                onclick="generateDokumenSumber(PERIODE_ID, 'btn-doksum', 'doksum-status')">
-                📄 Generate Dokumen Sumber TW <?= $tw ?>
+            <button type="button" class="btn-doksum" id="btn-doksum" onclick="generateDokumenSumberAktif()">
+                📄 <span id="doksum-label">Generate Dokumen Sumber TW <?= $tw ?></span>
             </button>
             <span id="doksum-status" style="font-size:.78rem;color:var(--ink-faint);margin-left:.7rem"></span>
         </div>
     </div>
 
+    <!-- NAVIGASI TAB — supaya 4 bagian tidak menumpuk ke bawah sekaligus -->
+    <div class="tab-nav">
+        <button type="button" class="tab-nav-btn active" data-tab="1" onclick="gantiTabEntry(1)">📊 Capaian IKU</button>
+        <button type="button" class="tab-nav-btn" data-tab="2" onclick="gantiTabEntry(2)">📝 Analisis Capaian IKU</button>
+        <button type="button" class="tab-nav-btn" data-tab="3" onclick="gantiTabEntry(3)">📋 Capaian RO</button>
+        <?php if ($periode_sblm): ?>
+        <button type="button" class="tab-nav-btn" data-tab="4" onclick="gantiTabEntry(4)">🔁 Tindak Lanjut TW Sebelumnya</button>
+        <?php endif; ?>
+    </div>
+
     <!-- BAGIAN 1: DATA CAPAIAN -->
-    <div class="section">
+    <div class="section tab-panel active" id="tab-panel-1">
         <div class="section-title">📊 Bagian 1 — Data Capaian IKU</div>
 
         <?php if ($master['jenis_satuan'] === '%'): ?>
@@ -337,7 +354,7 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
     </div>
 
     <!-- BAGIAN 2: ANALISIS -->
-    <div class="section">
+    <div class="section tab-panel" id="tab-panel-2">
         <div class="section-title">📝 Bagian 2 — Analisis Pencapaian TW <?= $tw ?></div>
 
         <div class="form-row">
@@ -403,10 +420,10 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
     </div>
 
     <!-- BAGIAN 3: RINCIAN OUTPUT -->
-    <?php if (count($ros) > 0): ?>
-    <div class="section">
+    <div class="section tab-panel" id="tab-panel-3">
         <div class="section-title">📋 Bagian 3 — Rincian Output (Sub-sheet <?= htmlspecialchars($kode) ?>)</div>
 
+        <?php if (count($ros) > 0): ?>
         <table class="ro-table">
             <thead>
                 <tr>
@@ -450,12 +467,14 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
                 <?php endforeach; ?>
             </tbody>
         </table>
+        <?php else: ?>
+        <p class="no-ro">Tidak ada Rincian Output untuk IKU ini.</p>
+        <?php endif; ?>
     </div>
-    <?php endif; ?>
 
     <!-- BAGIAN 4: TINDAK LANJUT TW SEBELUMNYA (riwayat, hanya foto bisa ditambah) -->
     <?php if ($periode_sblm): ?>
-    <div class="section section-sblm">
+    <div class="section section-sblm tab-panel" id="tab-panel-4">
         <div class="section-title">
             🔁 Bagian 4 — Tindak Lanjut TW <?= htmlspecialchars($periode_sblm['triwulan']) ?> <?= htmlspecialchars($periode_sblm['tahun']) ?>
             <span class="badge-readonly">🔒 Riwayat — teks tak bisa diedit</span>
@@ -508,14 +527,6 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
         <?php else: ?>
         <p class="no-ro">Tidak ada Rincian Output untuk IKU ini di triwulan sebelumnya.</p>
         <?php endif; ?>
-
-        <div style="margin-top:1.2rem">
-            <button type="button" class="btn-doksum ghost" id="btn-doksum-sblm"
-                onclick="generateDokumenSumber(PERIODE_ID_SBLM, 'btn-doksum-sblm', 'doksum-status-sblm')">
-                📄 Generate Dokumen Sumber Tindak Lanjut TW <?= htmlspecialchars($periode_sblm['triwulan']) ?>
-            </button>
-            <span id="doksum-status-sblm" style="font-size:.78rem;color:var(--ink-faint);margin-left:.7rem"></span>
-        </div>
     </div>
     <?php endif; ?>
 
@@ -537,6 +548,8 @@ const API        = '../../api/capaian_api.php';
 const API_NOTULA = '../../api/notula_api.php';
 const PERIODE_ID      = <?= $periode_id ?>;
 const PERIODE_ID_SBLM = <?= $periode_sblm ? (int)$periode_sblm['id'] : 'null' ?>;
+const LABEL_DOKSUM_AKTIF = <?= json_encode("Generate Dokumen Sumber TW $tw") ?>;
+const LABEL_DOKSUM_SBLM  = <?= $periode_sblm ? json_encode('Generate Dokumen Sumber Tindak Lanjut TW ' . $periode_sblm['triwulan']) : 'null' ?>;
 const IKU_KODE  = <?= json_encode($kode) ?>;
 const JENIS_SAT = <?= json_encode($master['jenis_satuan']) ?>;
 
@@ -746,6 +759,34 @@ async function ambilDariIKSS() {
         showToast(e.message, false);
     } finally {
         btn.disabled = false;
+    }
+}
+
+// ── Navigasi Tab (Bagian 1-4) ──────────────────────────
+// Tab 4 aktif → tombol "Generate Dokumen Sumber" di atas ikut berganti target
+// jadi Tindak Lanjut TW sebelumnya (menggantikan, bukan menambah tombol baru di bawah).
+let TAB_AKTIF = 1;
+
+function gantiTabEntry(n) {
+    TAB_AKTIF = n;
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-panel-' + n)?.classList.add('active');
+    document.querySelectorAll('.tab-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.tab == n));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    const label = document.getElementById('doksum-label');
+    if (n === 4 && LABEL_DOKSUM_SBLM) {
+        label.textContent = LABEL_DOKSUM_SBLM;
+    } else {
+        label.textContent = LABEL_DOKSUM_AKTIF;
+    }
+}
+
+function generateDokumenSumberAktif() {
+    if (TAB_AKTIF === 4 && PERIODE_ID_SBLM) {
+        generateDokumenSumber(PERIODE_ID_SBLM, 'btn-doksum', 'doksum-status');
+    } else {
+        generateDokumenSumber(PERIODE_ID, 'btn-doksum', 'doksum-status');
     }
 }
 
