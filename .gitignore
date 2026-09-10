@@ -1,0 +1,18 @@
+# Kredensial & konfigurasi lokal — jangan pernah commit
+/config/database.php
+
+# Data upload pengguna (foto bukti, dokumen, dsb) — bukan kode, bisa besar & privat
+/uploads/*/*
+!/uploads/*/.gitkeep
+
+# File sementara generator dokumen (dibuat otomatis saat generate)
+/tools/notula/tmp/*
+!/tools/notula/tmp/.gitkeep
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Editor
+.vscode/
+.idea/
