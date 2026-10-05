@@ -499,24 +499,31 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
             </div>
         </div>
 
-        <?php if (count($ros_sblm) > 0): ?>
+        <?php
+        // Satu baris RTL = satu poin. Foto disimpan di ck_ro_bukti_foto dengan
+        // ro_master_id = -(nomor poin) — id negatif tidak bentrok dengan id RO.
+        // ponytail: mengubah urutan RTL di TW lalu menggeser foto; pindah ke tabel poin kalau perlu.
+        $poin_sblm = array_values(array_filter(array_map(
+            fn($l) => trim(preg_replace('/^\(?\d{1,2}\)?[.\)\-:]\s*/', '', trim($l))),
+            preg_split('/\R/', (string)($entry_sblm['rtl'] ?? ''))
+        ), fn($l) => $l !== ''));
+        ?>
+        <?php if (count($poin_sblm) > 0): ?>
         <table class="ro-table ro-table-sblm">
             <thead>
                 <tr>
-                    <th style="width:32%">Rincian Output</th>
-                    <th>Narasi Realisasi (riwayat)</th>
-                    <th style="width:20%">Bukti Foto Tindak Lanjut</th>
+                    <th>Poin Rencana Tindak Lanjut</th>
+                    <th style="width:30%">Bukti Foto Tindak Lanjut</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($ros_sblm as $ro): ?>
-                <tr data-ro-id="<?= $ro['id'] ?>">
-                    <td><div class="ro-nama"><?= htmlspecialchars($ro['nama_ro']) ?></div></td>
-                    <td><div class="ro-narasi-baca"><?= htmlspecialchars($ro['narasi'] ?? '') ?: '(belum diisi saat itu)' ?></div></td>
+                <?php foreach ($poin_sblm as $i => $poin): $pid_poin = -($i + 1); ?>
+                <tr data-ro-id="<?= $pid_poin ?>">
+                    <td><div class="ro-narasi-baca"><?= ($i + 1) ?>. <?= htmlspecialchars($poin) ?></div></td>
                     <td>
-                        <div class="foto-galeri" id="foto-galeri-<?= $periode_sblm['id'] ?>-<?= $ro['id'] ?>"></div>
-                        <button type="button" class="btn-foto" onclick="pilihFoto(<?= $ro['id'] ?>, <?= $periode_sblm['id'] ?>)">📷 Tambah Foto</button>
-                        <input type="file" class="foto-input" data-ro-id="<?= $ro['id'] ?>" data-periode-id="<?= $periode_sblm['id'] ?>"
+                        <div class="foto-galeri" id="foto-galeri-<?= $periode_sblm['id'] ?>-<?= $pid_poin ?>"></div>
+                        <button type="button" class="btn-foto" onclick="pilihFoto(<?= $pid_poin ?>, <?= $periode_sblm['id'] ?>)">📷 Tambah Foto</button>
+                        <input type="file" class="foto-input" data-ro-id="<?= $pid_poin ?>" data-periode-id="<?= $periode_sblm['id'] ?>"
                             accept="image/png,image/jpeg" multiple style="display:none"
                             onchange="unggahFoto(this)">
                     </td>
@@ -525,7 +532,7 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
             </tbody>
         </table>
         <?php else: ?>
-        <p class="no-ro">Tidak ada Rincian Output untuk IKU ini di triwulan sebelumnya.</p>
+        <p class="no-ro">Belum ada Rencana Tindak Lanjut di triwulan sebelumnya.</p>
         <?php endif; ?>
     </div>
     <?php endif; ?>
@@ -805,7 +812,7 @@ async function generateDokumenSumber(periodeId, btnId, statusId) {
     st.textContent = '⏳ Menyusun dokumen...';
 
     try {
-        const res = await fetch(`${API_NOTULA}?action=generate_dokumen_sumber&periode_id=${periodeId}&iku_kode=${encodeURIComponent(IKU_KODE)}`);
+        const res = await fetch(`${API_NOTULA}?action=generate_dokumen_sumber&periode_id=${periodeId}&iku_kode=${encodeURIComponent(IKU_KODE)}${periodeId === PERIODE_ID_SBLM ? '&mode=tl' : ''}`);
         const ct = res.headers.get('Content-Type') || '';
 
         if (ct.includes('application/json')) {

@@ -601,6 +601,23 @@ case 'generate_dokumen_sumber':
     }
 
     $ro_list = [];
+    // mode=tl: periode ini adalah TW sebelumnya → bukti dikelompokkan per poin RTL
+    // (foto disimpan dengan ro_master_id = -nomor poin), bukan per RO.
+    if (($_GET['mode'] ?? '') === 'tl') {
+        $stmt = $db->prepare("SELECT file_path, keterangan, ro_master_id FROM ck_ro_bukti_foto WHERE periode_id = ? AND ro_master_id < 0 ORDER BY urutan, id");
+        $stmt->execute([$pid]);
+        $foto_poin = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
+            $foto_poin[-$f['ro_master_id']][] = [
+                'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
+                'keterangan' => $f['keterangan'],
+            ];
+        }
+        $ros = [];
+        foreach (dsBacaList($r['rtl']) as $i => $poin) {
+            $ro_list[] = ['nama_ro' => '', 'narasi' => $poin, 'foto' => $foto_poin[$i + 1] ?? []];
+        }
+    }
     foreach ($ros as $ro) {
         $nama = trim(preg_replace('/^\d+\s+[A-Z]{3}\s+\w+\.\s*/', '', $ro['nama_ro']));
         $ro_list[] = [
