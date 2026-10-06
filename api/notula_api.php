@@ -614,8 +614,12 @@ case 'generate_dokumen_sumber':
             ];
         }
         $ros = [];
+        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id < 0");
+        $stmt->execute([$pid, $kode]);
+        $narasi_poin = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
         foreach (dsBacaList($r['rtl']) as $i => $poin) {
-            $ro_list[] = ['nama_ro' => '', 'narasi' => $poin, 'foto' => $foto_poin[$i + 1] ?? []];
+            $tambahan = trim((string)($narasi_poin[-($i + 1)] ?? ''));
+            $ro_list[] = ['nama_ro' => '', 'narasi' => $poin . ($tambahan !== '' ? ': ' . $tambahan : ''), 'foto' => $foto_poin[$i + 1] ?? []];
         }
     }
     foreach ($ros as $ro) {

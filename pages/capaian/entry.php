@@ -508,6 +508,10 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
             fn($l) => trim(preg_replace('/^\(?\d{1,2}\)?[.\)\-:]\s*/', '', trim($l))),
             preg_split('/\R/', (string)($entry_sblm['rtl'] ?? ''))
         ), fn($l) => $l !== ''));
+        // Narasi tambahan (opsional) per poin: ck_entry_ro dengan ro_master_id negatif yang sama.
+        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id < 0");
+        $stmt->execute([$periode_sblm['id'], $kode]);
+        $narasi_poin = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
         ?>
         <?php if (count($poin_sblm) > 0): ?>
         <table class="ro-table ro-table-sblm">
@@ -520,7 +524,10 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
             <tbody>
                 <?php foreach ($poin_sblm as $i => $poin): $pid_poin = -($i + 1); ?>
                 <tr data-ro-id="<?= $pid_poin ?>">
-                    <td><div class="ro-narasi-baca"><?= ($i + 1) ?>. <?= htmlspecialchars($poin) ?></div></td>
+                    <td><div class="ro-narasi-baca"><?= ($i + 1) ?>. <?= htmlspecialchars($poin) ?></div>
+                        <textarea class="ro-narasi ro-narasi-tl" rows="3" placeholder="Narasi tindak lanjut (opsional)..."
+                            data-awal="<?= htmlspecialchars($narasi_poin[$pid_poin] ?? '') ?>"
+                            oninput="markDirty()"><?= htmlspecialchars($narasi_poin[$pid_poin] ?? '') ?></textarea></td>
                     <td>
                         <div class="foto-galeri" id="foto-galeri-<?= $periode_sblm['id'] ?>-<?= $pid_poin ?>"></div>
                         <button type="button" class="btn-foto" onclick="pilihFoto(<?= $pid_poin ?>, <?= $periode_sblm['id'] ?>)">📷 Tambah Foto</button>
@@ -654,6 +661,23 @@ async function simpanSemua() {
             }).then(r => r.json());
 
             if (!r2.success) throw new Error('Gagal simpan RO: ' + r2.message);
+        }
+
+        // Narasi tindak lanjut per poin (Bagian 4) — hanya yang berubah
+        for (const ta of document.querySelectorAll('.ro-narasi-tl')) {
+            if (ta.value === ta.dataset.awal) continue;
+            const r3 = await fetch(`${API}?action=save_ro`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    periode_id:   PERIODE_ID_SBLM,
+                    ro_master_id: parseInt(ta.closest('tr').dataset.roId),
+                    iku_kode:     IKU_KODE,
+                    narasi:       ta.value || null,
+                })
+            }).then(r => r.json());
+            if (!r3.success) throw new Error('Gagal simpan narasi tindak lanjut: ' + r3.message);
+            ta.dataset.awal = ta.value;
         }
 
         isDirty = false;
