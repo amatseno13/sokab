@@ -202,12 +202,12 @@ switch ($act) {
 
     // ── GET: ambil tautan dari IKSS (menu Monitoring Capaian Kinerja) ──
     //
-    // Dua tautan yang diambil punya asal triwulan berbeda:
-    //   link_bukti  ← link_dokumen_sumber IKSS pada triwulan YANG SAMA
-    //   link_tl     ← link_tindak_lanjut  IKSS pada triwulan SEBELUMNYA
+    // Kedua tautan diambil dari baris IKSS pada triwulan YANG SAMA:
+    //   link_bukti  ← link_dokumen_sumber
+    //   link_tl     ← link_tindak_lanjut (bukti tindak lanjut atas RTL triwulan
+    //                 sebelumnya, diinput di baris triwulan berjalan)
     //
-    // TW I mundur ke TW IV TAHUN SEBELUMNYA — karena itulah ikss_links perlu
-    // kolom tahun. Kalau kolomnya belum ada, tahun diabaikan agar tetap jalan.
+    // Kolom tahun di ikss_links dipakai bila ada; kalau belum, tahun diabaikan.
     case 'ikss_links':
         $periode_id = (int)($_GET['periode_id'] ?? 0);
         $kode       = $_GET['iku_kode'] ?? '';
@@ -230,13 +230,7 @@ switch ($act) {
         $tw    = $per['triwulan'];
         $tahun = (int)$per['tahun'];
 
-        $urut     = ['I', 'II', 'III', 'IV'];
-        $idx      = array_search($tw, $urut, true);
         $tw_label = 'TW ' . $tw;
-        $tw_sblm  = 'TW ' . $urut[($idx + 3) % 4];      // mundur satu, TW I → TW IV
-
-        // TW I mundur melewati pergantian tahun
-        $tahun_sblm = ($idx === 0) ? $tahun - 1 : $tahun;
 
         // Pastikan tabelnya ada
         try {
@@ -293,19 +287,18 @@ switch ($act) {
         };
 
         $kini = $ambil($tw_label, $tahun);
-        $sblm = $ambil($tw_sblm, $tahun_sblm);
 
         json_ok([
             'tersedia'       => true,
             'ikss_id'        => (int)$map['ikss_id'],
             'ikss_indikator' => $map['indikator_kinerja'] ?: $map['keterangan'],
             'triwulan'       => $tw_label . ' ' . $tahun,
-            'triwulan_sblm'  => $tw_sblm . ' ' . $tahun_sblm,
+            'triwulan_sblm'  => $tw_label . ' ' . $tahun,   // nama key lama dipertahankan agar JS tak perlu diubah
             'pakai_tahun'    => $pakai_tahun,
             'link_bukti'     => $kini['link_dokumen_sumber'] ?? '',
-            'link_tl'        => $sblm['link_tindak_lanjut'] ?? '',
+            'link_tl'        => $kini['link_tindak_lanjut'] ?? '',
             'ada_kini'       => (bool)$kini,
-            'ada_sblm'       => (bool)$sblm,
+            'ada_sblm'       => (bool)$kini,
         ]);
 
     // ── GET: daftar foto bukti semua RO pada satu periode ──
