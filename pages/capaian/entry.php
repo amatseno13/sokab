@@ -1131,7 +1131,7 @@ async function unggahFoto(inputEl) {
 }
 
 async function hapusFoto(fotoId, roId, periodeId) {
-    if (!confirm('Hapus foto ini?')) return;
+    if (!confirm('Yakin ingin menghapus foto/dokumen ini?\n\nFile yang dihapus tidak dapat dikembalikan.')) return;
     try {
         const r = await fetch(`${API}?action=foto_delete`, {
             method: 'POST',

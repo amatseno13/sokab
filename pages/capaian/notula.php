@@ -762,7 +762,7 @@ async function unggahDokumentasi(files) {
 }
 
 async function hapusDokumentasi(id) {
-    if (!confirm('Hapus foto dokumentasi ini?')) return;
+    if (!confirm('Yakin ingin menghapus foto dokumentasi ini?\n\nFoto yang dihapus tidak dapat dikembalikan.')) return;
     try {
         const r = await fetch(`${API}?action=dok_delete`, {
             method: 'POST',
