@@ -18,6 +18,16 @@ $act = $_GET['action'] ?? $_POST['action'] ?? '';
 function json_ok($data = [])  { echo json_encode(['success' => true]  + $data); exit; }
 function json_err($msg)       { http_response_code(400); echo json_encode(['success' => false, 'message' => $msg]); exit; }
 
+// Error DB yang tak tertangkap → tetap JSON (bukan body kosong yang memicu "Unexpected end of JSON input")
+set_exception_handler(function (Throwable $e) {
+    error_log('[SOKAB capaian_api] ' . $e->getMessage());
+    $pesan = strpos($e->getMessage(), 'iku_kode') !== false
+        ? 'Kolom iku_kode belum ada di tabel ck_ro_bukti_foto — jalankan sql/ck_ro_bukti_foto_iku.sql di phpMyAdmin.'
+        : 'Kesalahan server: ' . $e->getMessage();
+    http_response_code(500);
+    echo json_encode(['success' => false, 'message' => $pesan]);
+});
+
 function body(): array {
     $raw = file_get_contents('php://input');
     return $raw ? (json_decode($raw, true) ?? []) : [];
