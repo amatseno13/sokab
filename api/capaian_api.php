@@ -402,13 +402,16 @@ switch ($act) {
         $iku_kode     = $body['iku_kode'] ?? '';
         if (!$periode_id || $ro_master_id > -1000000 || !$iku_kode) json_err('parameter tidak valid');
 
-        $stmt = $db->prepare("SELECT id, file_path FROM ck_ro_bukti_foto WHERE periode_id = ? AND ro_master_id = ? AND iku_kode = ?");
-        $stmt->execute([$periode_id, $ro_master_id, $iku_kode]);
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $abs = __DIR__ . '/../' . $row['file_path'];
-            if (is_file($abs)) @unlink($abs);
-            $db->prepare("DELETE FROM ck_ro_bukti_foto WHERE id = ?")->execute([$row['id']]);
-        }
+        // Kolom iku_kode belum ada (sql/ck_ro_bukti_foto_iku.sql belum dijalankan) → tak ada foto uraian untuk dihapus
+        try {
+            $stmt = $db->prepare("SELECT id, file_path FROM ck_ro_bukti_foto WHERE periode_id = ? AND ro_master_id = ? AND iku_kode = ?");
+            $stmt->execute([$periode_id, $ro_master_id, $iku_kode]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $abs = __DIR__ . '/../' . $row['file_path'];
+                if (is_file($abs)) @unlink($abs);
+                $db->prepare("DELETE FROM ck_ro_bukti_foto WHERE id = ?")->execute([$row['id']]);
+            }
+        } catch (PDOException $e) { /* lanjut hapus entri teks */ }
         $db->prepare("DELETE FROM ck_entry_ro WHERE periode_id = ? AND ro_master_id = ? AND iku_kode = ?")
            ->execute([$periode_id, $ro_master_id, $iku_kode]);
         json_ok(['message' => 'Uraian dihapus']);
