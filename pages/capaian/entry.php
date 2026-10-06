@@ -596,6 +596,7 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
 
 <div class="toast" id="toast"></div>
 
+<script src="../../assets/js/konfirmasi.js"></script>
 <script>
 const API        = '../../api/capaian_api.php';
 const API_NOTULA = '../../api/notula_api.php';
@@ -1027,7 +1028,7 @@ async function tambahNode(roId, tipe, parentId) {
 async function hapusNode(id) {
     const el = document.querySelector(`.node-item[data-node-id="${id}"]`);
     const ada = el.querySelectorAll('.node-item').length;
-    if (!confirm(ada ? `Hapus beserta ${ada} butir di bawahnya dan semua fotonya?` : 'Hapus butir ini beserta fotonya?')) return;
+    if (!await konfirmasiHapus(ada ? `Hapus beserta ${ada} butir di bawahnya?` : 'Hapus butir ini?', 'Isi dan semua foto di dalamnya ikut terhapus dan tidak dapat dikembalikan.')) return;
     try {
         const r = await fetch(`${API}?action=node_hapus`, {
             method: 'POST',
@@ -1131,7 +1132,7 @@ async function unggahFoto(inputEl) {
 }
 
 async function hapusFoto(fotoId, roId, periodeId) {
-    if (!confirm('Yakin ingin menghapus foto/dokumen ini?\n\nFile yang dihapus tidak dapat dikembalikan.')) return;
+    if (!await konfirmasiHapus('Hapus foto/dokumen ini?', 'File yang dihapus tidak dapat dikembalikan.')) return;
     try {
         const r = await fetch(`${API}?action=foto_delete`, {
             method: 'POST',

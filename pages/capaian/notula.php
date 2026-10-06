@@ -278,6 +278,7 @@ tr:hover td{background:#fffaf5}
 
 <div class="toast" id="toast"></div>
 
+<script src="../../assets/js/konfirmasi.js"></script>
 <script>
 const API = '../../api/notula_api.php';
 const PERIODE_ID = <?= (int)($default_periode['id'] ?? 0) ?>;
@@ -762,7 +763,7 @@ async function unggahDokumentasi(files) {
 }
 
 async function hapusDokumentasi(id) {
-    if (!confirm('Yakin ingin menghapus foto dokumentasi ini?\n\nFoto yang dihapus tidak dapat dikembalikan.')) return;
+    if (!await konfirmasiHapus('Hapus foto dokumentasi ini?', 'Foto yang dihapus tidak dapat dikembalikan.')) return;
     try {
         const r = await fetch(`${API}?action=dok_delete`, {
             method: 'POST',
