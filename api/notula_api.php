@@ -622,26 +622,41 @@ case 'generate_dokumen_sumber':
             $ro_list[] = ['nama_ro' => '', 'narasi' => $poin . ($tambahan !== '' ? ': ' . $tambahan : ''), 'foto' => $foto_poin[$i + 1] ?? []];
         }
     }
-    // Uraian kegiatan per RO (manual, opsional): id = -(1000000 + id_RO*1000 + urutan).
-    // Kolom iku_kode pada foto mungkin belum ada (sql/ck_ro_bukti_foto_iku.sql) → uraian dilewati.
+    // Uraian kegiatan per RO (manual, opsional): Kegiatan → Sub Kegiatan → Tahapan (ck_uraian_node).
+    // Diratakan berurutan dengan nomor: kegiatan "1." · sub "1.1" · tahapan "1.a" / "1.1.a".
+    // Tabel/kolom mungkin belum ada (sql/ck_uraian_node.sql) → bagian ini dilewati.
     $uraian_per_ro = [];
     if (($_GET['mode'] ?? '') !== 'tl') {
         try {
-            $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id <= -1000000 ORDER BY ro_master_id DESC");
+            $stmt = $db->prepare("SELECT id, ro_master_id, parent_id, tipe, narasi FROM ck_uraian_node WHERE periode_id = ? AND iku_kode = ? ORDER BY urutan, id");
             $stmt->execute([$pid, $kode]);
-            $uraian = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id <= -1000000 ORDER BY urutan, id");
+            $anak = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $n) $anak[(int)$n['ro_master_id']][(int)$n['parent_id']][] = $n;
+
+            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id <= -10000000 ORDER BY urutan, id");
             $stmt->execute([$pid, $kode]);
-            $foto_uraian = [];
+            $foto_node = [];
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
-                $foto_uraian[$f['ro_master_id']][] = [
+                $foto_node[-$f['ro_master_id'] - 10000000][] = [
                     'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
                     'keterangan' => $f['keterangan'],
                 ];
             }
-            foreach ($uraian as $id => $narasi) {
-                $ro_id = intdiv(-$id - 1000000, 1000);
-                $uraian_per_ro[$ro_id][] = ['narasi' => (string)$narasi, 'foto' => $foto_uraian[$id] ?? []];
+
+            $ratakan = function (array $peta, int $parent, string $awalan, int $level, array &$out) use (&$ratakan, $foto_node) {
+                $s = 0; $t = 0;
+                foreach ($peta[$parent] ?? [] as $n) {
+                    if ($n['tipe'] === 'sub') $nomor = $awalan . ($awalan === '' ? '' : '.') . (++$s);
+                    elseif ($n['tipe'] === 'tahap') $nomor = $awalan . ($awalan === '' ? '' : '.') . chr(97 + $t++ % 26);
+                    else $nomor = $awalan . ($awalan === '' ? '' : '.') . (++$s) ; // kegiatan (akar)
+                    $out[] = ['nomor' => $nomor, 'level' => $level, 'narasi' => (string)$n['narasi'], 'foto' => $foto_node[(int)$n['id']] ?? []];
+                    $ratakan($peta, (int)$n['id'], $nomor, $level + 1, $out);
+                }
+            };
+            foreach ($anak as $ro_id => $peta) {
+                $out = [];
+                $ratakan($peta, 0, '', 1, $out);
+                $uraian_per_ro[$ro_id] = $out;
             }
         } catch (PDOException $e) { /* migrasi belum dijalankan */ }
     }

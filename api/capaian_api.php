@@ -404,27 +404,76 @@ switch ($act) {
         $db->prepare("DELETE FROM ck_ro_bukti_foto WHERE id = ?")->execute([$id]);
         json_ok(['message' => 'Foto dihapus']);
 
-    // ── POST: hapus satu uraian kegiatan tambahan (+ semua fotonya) ──
-    case 'uraian_hapus':
-        $body = body();
-        $periode_id   = (int)($body['periode_id'] ?? 0);
-        $ro_master_id = (int)($body['ro_master_id'] ?? 0);
-        $iku_kode     = $body['iku_kode'] ?? '';
-        if (!$periode_id || $ro_master_id > -1000000 || !$iku_kode) json_err('parameter tidak valid');
+    // ── POST: tambah / ubah node uraian (kegiatan → sub kegiatan → tahapan) ──
+    //   tanpa id : buat baru (periode_id, iku_kode, ro_master_id, tipe, parent_id) → kembalikan id
+    //   dengan id: ubah narasi
+    case 'node_save':
+        $b  = body();
+        $id = (int)($b['id'] ?? 0);
+        if ($id) {
+            $db->prepare("UPDATE ck_uraian_node SET narasi = ?, updated_by = ? WHERE id = ?")
+               ->execute([$b['narasi'] ?? null, user_id(), $id]);
+            json_ok(['id' => $id]);
+        }
 
-        // Kolom iku_kode belum ada (sql/ck_ro_bukti_foto_iku.sql belum dijalankan) → tak ada foto uraian untuk dihapus
-        try {
-            $stmt = $db->prepare("SELECT id, file_path FROM ck_ro_bukti_foto WHERE periode_id = ? AND ro_master_id = ? AND iku_kode = ?");
-            $stmt->execute([$periode_id, $ro_master_id, $iku_kode]);
+        $periode_id   = (int)($b['periode_id'] ?? 0);
+        $iku_kode     = $b['iku_kode'] ?? '';
+        $ro_master_id = (int)($b['ro_master_id'] ?? 0);
+        $tipe         = $b['tipe'] ?? '';
+        $parent_id    = (int)($b['parent_id'] ?? 0);
+        if (!$periode_id || !$iku_kode || $ro_master_id <= 0) json_err('periode_id + iku_kode + ro_master_id required');
+        if (!in_array($tipe, ['kegiatan', 'sub', 'tahap'], true)) json_err('tipe tidak valid');
+
+        // Aturan susunan: kegiatan di akar; sub di bawah kegiatan; tahapan di bawah kegiatan ATAU sub
+        if ($tipe === 'kegiatan') {
+            if ($parent_id) json_err('Kegiatan tidak boleh punya induk');
+        } else {
+            $stmt = $db->prepare("SELECT tipe FROM ck_uraian_node WHERE id = ? AND periode_id = ? AND iku_kode = ? AND ro_master_id = ?");
+            $stmt->execute([$parent_id, $periode_id, $iku_kode, $ro_master_id]);
+            $tipe_induk = $stmt->fetchColumn();
+            if (!$tipe_induk) json_err('Induk tidak ditemukan');
+            $boleh = $tipe === 'sub' ? ['kegiatan'] : ['kegiatan', 'sub'];
+            if (!in_array($tipe_induk, $boleh, true)) json_err("$tipe tidak boleh di bawah $tipe_induk");
+        }
+
+        $stmt = $db->prepare("SELECT COALESCE(MAX(urutan), 0) + 1 FROM ck_uraian_node
+                              WHERE periode_id = ? AND iku_kode = ? AND ro_master_id = ? AND tipe = ? AND parent_id <=> ?");
+        $stmt->execute([$periode_id, $iku_kode, $ro_master_id, $tipe, $parent_id ?: null]);
+        $urutan = (int)$stmt->fetchColumn();
+
+        $db->prepare("INSERT INTO ck_uraian_node (periode_id, iku_kode, ro_master_id, parent_id, tipe, urutan, updated_by)
+                      VALUES (?, ?, ?, ?, ?, ?, ?)")
+           ->execute([$periode_id, $iku_kode, $ro_master_id, $parent_id ?: null, $tipe, $urutan, user_id()]);
+        json_ok(['id' => (int)$db->lastInsertId()]);
+
+    // ── POST: hapus node beserta semua turunannya dan fotonya ──
+    case 'node_hapus':
+        $b  = body();
+        $id = (int)($b['id'] ?? 0);
+        if (!$id) json_err('id required');
+
+        $semua = [$id]; $antri = [$id];
+        while ($antri) {
+            $in = implode(',', array_fill(0, count($antri), '?'));
+            $stmt = $db->prepare("SELECT id FROM ck_uraian_node WHERE parent_id IN ($in)");
+            $stmt->execute($antri);
+            $antri = $stmt->fetchAll(PDO::FETCH_COLUMN);
+            $semua = array_merge($semua, $antri);
+        }
+
+        foreach ($semua as $nid) {
+            $key = -(10000000 + (int)$nid);
+            $stmt = $db->prepare("SELECT id, file_path FROM ck_ro_bukti_foto WHERE ro_master_id = ?");
+            $stmt->execute([$key]);
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
                 $abs = __DIR__ . '/../' . $row['file_path'];
                 if (is_file($abs)) @unlink($abs);
                 $db->prepare("DELETE FROM ck_ro_bukti_foto WHERE id = ?")->execute([$row['id']]);
             }
-        } catch (PDOException $e) { /* lanjut hapus entri teks */ }
-        $db->prepare("DELETE FROM ck_entry_ro WHERE periode_id = ? AND ro_master_id = ? AND iku_kode = ?")
-           ->execute([$periode_id, $ro_master_id, $iku_kode]);
-        json_ok(['message' => 'Uraian dihapus']);
+        }
+        $in = implode(',', array_fill(0, count($semua), '?'));
+        $db->prepare("DELETE FROM ck_uraian_node WHERE id IN ($in)")->execute($semua);
+        json_ok(['terhapus' => count($semua)]);
 
     default:
         json_err("Action '$act' tidak dikenal");

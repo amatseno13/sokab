@@ -36,7 +36,7 @@ function dsEmu(float $cm): int { return (int)round($cm * 360000); }
 function dsParagraf(array $runs, array $opts = []): string {
     $align = $opts['align'] ?? null;
     $pPr = '';
-    if ($align || isset($opts['space_after']) || isset($opts['space_before'])) {
+    if ($align || isset($opts['space_after']) || isset($opts['space_before']) || isset($opts['indent_cm'])) {
         $pPr .= '<w:pPr>';
         if (isset($opts['space_after']) || isset($opts['space_before'])) {
             $pPr .= '<w:spacing';
@@ -44,6 +44,7 @@ function dsParagraf(array $runs, array $opts = []): string {
             if (isset($opts['space_after']))  $pPr .= ' w:after="'  . (int)($opts['space_after']  * 20) . '"';
             $pPr .= '/>';
         }
+        if (isset($opts['indent_cm'])) $pPr .= '<w:ind w:left="' . dsTwips((float)$opts['indent_cm']) . '"/>';
         if ($align) $pPr .= '<w:jc w:val="' . dsEsc($align) . '"/>';
         $pPr .= '</w:pPr>';
     }
@@ -289,7 +290,7 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
         if ($narasi !== '') $aktivitas[] = trim(($ro['nama_ro'] ?? '') . ': ' . $narasi, ': ');
         foreach (($ro['uraian'] ?? []) as $u) {
             $t = trim((string)($u['narasi'] ?? ''));
-            if ($t !== '') $aktivitas[] = $t;
+            if ($t !== '' && ($u['level'] ?? 1) === 1) $aktivitas[] = $t;
         }
     }
     dsSisip($doc, $sectPr, dsP($aktivitas ? implode(' ', $aktivitas) : '-', ['align' => 'both', 'space_after' => 10]));
@@ -345,17 +346,18 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
         $narasiRo = trim((string)($ro['narasi'] ?? ''));
         $namaRo   = trim((string)($ro['nama_ro'] ?? ''));
         $label    = $narasiRo !== '' ? $narasiRo : $namaRo;
-        if ($label !== '') $tampil[] = ['• ' . $label, $ro['foto'] ?? [], true];
+        if ($label !== '') $tampil[] = ['• ' . $label, $ro['foto'] ?? [], true, 0];
         foreach (($ro['uraian'] ?? []) as $u) {
             $t = trim((string)($u['narasi'] ?? ''));
             if ($t === '' && empty($u['foto'])) continue;
-            $tampil[] = ['– ' . ($t !== '' ? $t : '(tanpa uraian)'), $u['foto'] ?? [], false];
+            $lv = (int)($u['level'] ?? 1);
+            $tampil[] = [trim(($u['nomor'] ?? '') . ($lv === 1 ? '.' : '') . ' ' . ($t !== '' ? $t : '(tanpa uraian)')), $u['foto'] ?? [], false, $lv * 0.6];
         }
     }
 
-    foreach ($tampil as [$teks, $fotoList, $utama]) {
+    foreach ($tampil as [$teks, $fotoList, $utama, $indent]) {
         if ($utama) $roTerisi++;
-        dsSisip($doc, $sectPr, dsP($teks, ['bold' => $utama, 'space_after' => 6]));
+        dsSisip($doc, $sectPr, dsP($teks, ['bold' => $utama, 'space_after' => 6] + ($utama ? [] : ['indent_cm' => $indent ?? 0.6])));
 
         foreach ($fotoList as $foto) {
             $path = $foto['path'] ?? '';

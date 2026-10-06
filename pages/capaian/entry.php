@@ -421,21 +421,14 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
     </div>
 
     <?php
-    // Uraian kegiatan per RO (opsional): ck_entry_ro dengan ro_master_id = -(1000000 + id_RO*1000 + urutan).
-    // ponytail: id negatif + iku_kode, tanpa tabel baru; maks. 999 uraian per RO.
-    $stmt = $db->prepare("SELECT ro_master_id AS id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id <= -1000000 ORDER BY ro_master_id DESC");
-    $stmt->execute([$periode_id, $kode]);
-    $uraian_awal = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    // Uraian yang baru punya foto (narasi belum disimpan) tetap harus tampil
+    // Uraian kegiatan per RO (opsional): Kegiatan → Sub Kegiatan → Tahapan (tabel ck_uraian_node)
     try {
-        $stmt = $db->prepare("SELECT DISTINCT ro_master_id FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND ro_master_id <= -1000000");
+        $stmt = $db->prepare("SELECT id, ro_master_id AS ro, parent_id AS parent, tipe, narasi
+                              FROM ck_uraian_node WHERE periode_id = ? AND iku_kode = ?
+                              ORDER BY ro_master_id, urutan, id");
         $stmt->execute([$periode_id, $kode]);
-        $ada = array_column($uraian_awal, 'id');
-        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
-            if (!in_array($id, $ada)) $uraian_awal[] = ['id' => $id, 'narasi' => ''];
-        }
-        usort($uraian_awal, fn($a, $b) => $b['id'] <=> $a['id']);
-    } catch (PDOException $e) { /* kolom iku_kode belum ada */ }
+        $nodes_awal = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) { $nodes_awal = []; }   // sql/ck_uraian_node.sql belum dijalankan
     ?>
     <!-- BAGIAN 3: RINCIAN OUTPUT -->
     <div class="section tab-panel" id="tab-panel-3">
@@ -489,9 +482,9 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
                 </tr>
                 <tr class="uraian-row">
                     <td colspan="5" style="background:#faf7f2">
-                        <div style="font-size:.78rem;font-weight:700;margin-bottom:.4rem">Uraian Kegiatan <span style="font-weight:400;color:var(--ink-faint)">(opsional — mis. tahapan kegiatan; foto bukti dipasang di tiap uraian)</span></div>
-                        <div class="uraian-list" id="uraian-list-<?= $ro['id'] ?>"></div>
-                        <button type="button" class="btn-foto" onclick="tambahUraian(<?= $ro['id'] ?>)">➕ Tambah Uraian Kegiatan</button>
+                        <div style="font-size:.78rem;font-weight:700;margin-bottom:.4rem">Uraian Kegiatan <span style="font-weight:400;color:var(--ink-faint)">(opsional — kegiatan, sub kegiatan, dan tahapan; foto bukti dipasang di tiap butir)</span></div>
+                        <div class="node-root" id="node-root-<?= $ro['id'] ?>"></div>
+                        <button type="button" class="btn-foto" onclick="tambahNode(<?= $ro['id'] ?>, 'kegiatan', 0)">➕ Tambah Kegiatan</button>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -668,7 +661,7 @@ async function simpanSemua() {
         // Simpan RO rows
         // ':not(.ro-table-sblm)' wajib — Bagian 4 (Tindak Lanjut) pakai ro_master_id yang
         // SAMA dengan Bagian 3 tapi read-only; tanpa ini datanya bisa tertimpa kosong.
-        const roRows = document.querySelectorAll('.ro-table:not(.ro-table-sblm):not(.uraian-table) tbody tr[data-ro-id]');
+        const roRows = document.querySelectorAll('.ro-table:not(.ro-table-sblm) tbody tr[data-ro-id]');
         for (const row of roRows) {
             const roId   = parseInt(row.dataset.roId);
             const vol    = row.querySelector('.ro-vol')?.value;
@@ -693,18 +686,13 @@ async function simpanSemua() {
             if (!r2.success) throw new Error('Gagal simpan RO: ' + r2.message);
         }
 
-        // Uraian kegiatan tambahan (Bagian 3) — hanya yang berubah
-        for (const ta of document.querySelectorAll('.uraian-narasi')) {
+        // Narasi uraian kegiatan (kegiatan / sub kegiatan / tahapan) — hanya yang berubah
+        for (const ta of document.querySelectorAll('.node-narasi')) {
             if (ta.value === ta.dataset.awal) continue;
-            const r4 = await fetch(`${API}?action=save_ro`, {
+            const r4 = await fetch(`${API}?action=node_save`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    periode_id:   PERIODE_ID,
-                    ro_master_id: parseInt(ta.closest('[data-ro-id]').dataset.roId),
-                    iku_kode:     IKU_KODE,
-                    narasi:       ta.value || null,
-                })
+                body: JSON.stringify({id: parseInt(ta.closest('.node-item').dataset.nodeId), narasi: ta.value || null})
             }).then(r => r.json());
             if (!r4.success) throw new Error('Gagal simpan uraian kegiatan: ' + r4.message);
             ta.dataset.awal = ta.value;
@@ -948,52 +936,104 @@ async function muatFotoUntukPeriode(periodeId, rowSelector) {
 }
 
 // ── Uraian Kegiatan per RO (opsional) ──────────────────
-// id uraian = -(1000000 + id_RO*1000 + urutan)
-const URAIAN_AWAL = <?= json_encode($uraian_awal) ?>;
+// Kegiatan → Sub Kegiatan → Tahapan. Tahapan boleh langsung di bawah Kegiatan.
+// Node langsung dibuat di server saat ditambah (supaya foto punya id); narasi disimpan lewat "Simpan Data".
+// Foto node: ro_master_id = -(10000000 + id node).
+const NODES_AWAL = <?= json_encode($nodes_awal) ?>;
 const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const roDariUraian = id => Math.floor((-id - 1000000) / 1000);
+const fotoKey = id => -(10000000 + id);
+const NAMA_NODE = {kegiatan: 'Kegiatan', sub: 'Sub Kegiatan', tahap: 'Tahapan'};
 
-function barisUraian(id, narasi) {
-    return `<div class="uraian-item" data-ro-id="${id}" style="display:grid;grid-template-columns:1fr 240px 32px;gap:.7rem;margin-bottom:.6rem;align-items:start">
-        <textarea class="uraian-narasi" rows="2" placeholder="Uraikan kegiatan / tahapan..."
-            data-awal="${esc(narasi)}" oninput="markDirty()">${esc(narasi)}</textarea>
-        <div>
-            <div class="foto-galeri" id="foto-galeri-${PERIODE_ID}-${id}"></div>
-            <button type="button" class="btn-foto" onclick="pilihFoto(${id}, ${PERIODE_ID})">📷 Tambah Foto</button>
-            <input type="file" class="foto-input" data-ro-id="${id}" data-periode-id="${PERIODE_ID}"
-                accept="image/png,image/jpeg" multiple style="display:none" onchange="unggahFoto(this)">
+function htmlNode(n) {
+    const key = fotoKey(n.id);
+    const tombol = n.tipe === 'tahap' ? '' : `<div style="margin-top:.4rem">
+        ${n.tipe === 'kegiatan' ? `<button type="button" class="btn-foto" onclick="tambahNode(${n.ro}, 'sub', ${n.id})">➕ Sub Kegiatan</button>` : ''}
+        <button type="button" class="btn-foto" onclick="tambahNode(${n.ro}, 'tahap', ${n.id})">➕ Tahapan</button></div>`;
+    return `<div class="node-item" data-node-id="${n.id}" data-ro="${n.ro}" data-tipe="${n.tipe}" data-ro-id="${key}"
+            style="margin:.5rem 0 .5rem ${n.tipe === 'kegiatan' ? 0 : 1.4}rem;padding:.6rem .7rem;background:#fff;border:1px solid var(--line, #e5ded3);border-radius:8px">
+        <div class="node-head" style="font-size:.76rem;font-weight:700;margin-bottom:.35rem">
+            <span class="node-no"></span> ${NAMA_NODE[n.tipe]}
+            <button type="button" class="hapus" title="Hapus beserta isinya" style="float:right" onclick="hapusNode(${n.id})">✕</button>
         </div>
-        <button type="button" class="hapus" title="Hapus uraian" onclick="hapusUraian(${id})">✕</button>
+        <div style="display:grid;grid-template-columns:1fr 240px;gap:.7rem;align-items:start">
+            <textarea class="node-narasi" rows="2" placeholder="Uraikan ${NAMA_NODE[n.tipe].toLowerCase()}..."
+                data-awal="${esc(n.narasi)}" oninput="markDirty()">${esc(n.narasi)}</textarea>
+            <div>
+                <div class="foto-galeri" id="foto-galeri-${PERIODE_ID}-${key}"></div>
+                <button type="button" class="btn-foto" onclick="pilihFoto(${key}, ${PERIODE_ID})">📷 Tambah Foto</button>
+                <input type="file" class="foto-input" data-ro-id="${key}" data-periode-id="${PERIODE_ID}"
+                    accept="image/png,image/jpeg" multiple style="display:none" onchange="unggahFoto(this)">
+            </div>
+        </div>
+        ${n.tipe === 'tahap' ? '' : '<div class="node-children"></div>'}
+        ${tombol}
     </div>`;
 }
 
-function tambahUraian(roId) {
-    const list = document.getElementById(`uraian-list-${roId}`);
-    const urut = [...list.children].map(el => roDariUraian(parseInt(el.dataset.roId)) === roId
-        ? (-parseInt(el.dataset.roId) - 1000000) % 1000 : 0);
-    const id = -(1000000 + roId * 1000 + Math.max(0, ...urut) + 1);
-    list.insertAdjacentHTML('beforeend', barisUraian(id, ''));
-    markDirty();
+const anakDari = el => el.querySelector(':scope > .node-children');
+const setNo = (el, no) => el.querySelector(':scope > .node-head .node-no').textContent = no;
+
+// Kegiatan "1." · Sub "1.1" · Tahapan di bawah kegiatan "1.a" · Tahapan di bawah sub "1.1.a"
+function nomori(el, awalan) {
+    let s = 0, t = 0;
+    [...(anakDari(el)?.children || [])].forEach(c => {
+        if (c.dataset.tipe === 'sub') { const no = `${awalan}.${++s}`; setNo(c, no); nomori(c, no); }
+        else setNo(c, `${awalan}.${String.fromCharCode(97 + t++)}`);
+    });
+}
+function renumber(roId) {
+    [...document.getElementById(`node-root-${roId}`).children].forEach((k, i) => {
+        setNo(k, `${i + 1}.`); nomori(k, `${i + 1}`);
+    });
 }
 
-async function hapusUraian(id) {
-    if (!confirm('Hapus uraian ini beserta semua fotonya?')) return;
+function pasangNode(n, wadah) {
+    wadah.insertAdjacentHTML('beforeend', htmlNode(n));
+    const el = wadah.lastElementChild;
+    NODES_AWAL.filter(c => c.parent == n.id).forEach(c => pasangNode(c, anakDari(el)));
+}
+
+async function tambahNode(roId, tipe, parentId) {
     try {
-        const r = await fetch(`${API}?action=uraian_hapus`, {
+        const r = await fetch(`${API}?action=node_save`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({periode_id: PERIODE_ID, ro_master_id: id, iku_kode: IKU_KODE})
+            body: JSON.stringify({periode_id: PERIODE_ID, iku_kode: IKU_KODE, ro_master_id: roId, tipe, parent_id: parentId})
         }).then(r => r.json());
         if (!r.success) throw new Error(r.message);
-        document.querySelector(`.uraian-item[data-ro-id="${id}"]`)?.remove();
+        const wadah = parentId
+            ? anakDari(document.querySelector(`.node-item[data-node-id="${parentId}"]`))
+            : document.getElementById(`node-root-${roId}`);
+        wadah.insertAdjacentHTML('beforeend', htmlNode({id: r.id, ro: roId, parent: parentId, tipe, narasi: ''}));
+        renumber(roId);
+    } catch (e) { showToast('Gagal menambah: ' + e.message, false); }
+}
+
+async function hapusNode(id) {
+    const el = document.querySelector(`.node-item[data-node-id="${id}"]`);
+    const ada = el.querySelectorAll('.node-item').length;
+    if (!confirm(ada ? `Hapus beserta ${ada} butir di bawahnya dan semua fotonya?` : 'Hapus butir ini beserta fotonya?')) return;
+    try {
+        const r = await fetch(`${API}?action=node_hapus`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id})
+        }).then(r => r.json());
+        if (!r.success) throw new Error(r.message);
+        const roId = el.dataset.ro;
+        el.remove();
+        renumber(roId);
     } catch (e) { showToast('Gagal hapus: ' + e.message, false); }
 }
 
-URAIAN_AWAL.forEach(u => document.getElementById(`uraian-list-${roDariUraian(u.id)}`)
-    ?.insertAdjacentHTML('beforeend', barisUraian(u.id, u.narasi)));
+NODES_AWAL.filter(n => !n.parent).forEach(n => {
+    const root = document.getElementById(`node-root-${n.ro}`);
+    if (root) pasangNode(n, root);
+});
+document.querySelectorAll('.node-root').forEach(r => renumber(r.id.replace('node-root-', '')));
 
 function muatSemuaFoto() {
-    muatFotoUntukPeriode(PERIODE_ID, '.ro-table:not(.ro-table-sblm) tbody tr[data-ro-id], .uraian-item');
+    muatFotoUntukPeriode(PERIODE_ID, '.ro-table:not(.ro-table-sblm) tbody tr[data-ro-id], .node-item');
     if (PERIODE_ID_SBLM) {
         muatFotoUntukPeriode(PERIODE_ID_SBLM, '.ro-table-sblm tbody tr[data-ro-id]');
     }
