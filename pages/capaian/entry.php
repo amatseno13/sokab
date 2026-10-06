@@ -426,6 +426,16 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
     $stmt = $db->prepare("SELECT ro_master_id AS id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id <= -1000000 ORDER BY ro_master_id DESC");
     $stmt->execute([$periode_id, $kode]);
     $uraian_awal = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    // Uraian yang baru punya foto (narasi belum disimpan) tetap harus tampil
+    try {
+        $stmt = $db->prepare("SELECT DISTINCT ro_master_id FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND ro_master_id <= -1000000");
+        $stmt->execute([$periode_id, $kode]);
+        $ada = array_column($uraian_awal, 'id');
+        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            if (!in_array($id, $ada)) $uraian_awal[] = ['id' => $id, 'narasi' => ''];
+        }
+        usort($uraian_awal, fn($a, $b) => $b['id'] <=> $a['id']);
+    } catch (PDOException $e) { /* kolom iku_kode belum ada */ }
     ?>
     <!-- BAGIAN 3: RINCIAN OUTPUT -->
     <div class="section tab-panel" id="tab-panel-3">
