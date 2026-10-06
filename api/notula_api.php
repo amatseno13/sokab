@@ -586,7 +586,7 @@ case 'generate_dokumen_sumber':
     $stmt = $db->prepare("
         SELECT ro_master_id, file_path, keterangan
         FROM ck_ro_bukti_foto
-        WHERE periode_id = ? AND ro_master_id IN (
+        WHERE periode_id = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id IN (
             SELECT id FROM ck_ro_master WHERE iku_kode = ?
         )
         ORDER BY ro_master_id, urutan, id
@@ -604,8 +604,8 @@ case 'generate_dokumen_sumber':
     // mode=tl: periode ini adalah TW sebelumnya → bukti dikelompokkan per poin RTL
     // (foto disimpan dengan ro_master_id = -nomor poin), bukan per RO.
     if (($_GET['mode'] ?? '') === 'tl') {
-        $stmt = $db->prepare("SELECT file_path, keterangan, ro_master_id FROM ck_ro_bukti_foto WHERE periode_id = ? AND ro_master_id < 0 ORDER BY urutan, id");
-        $stmt->execute([$pid]);
+        $stmt = $db->prepare("SELECT file_path, keterangan, ro_master_id FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id BETWEEN -999 AND -1 ORDER BY urutan, id");
+        $stmt->execute([$pid, $kode]);
         $foto_poin = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
             $foto_poin[-$f['ro_master_id']][] = [
@@ -614,7 +614,7 @@ case 'generate_dokumen_sumber':
             ];
         }
         $ros = [];
-        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id < 0");
+        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999 AND -1");
         $stmt->execute([$pid, $kode]);
         $narasi_poin = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
         foreach (dsBacaList($r['rtl']) as $i => $poin) {
@@ -622,12 +622,37 @@ case 'generate_dokumen_sumber':
             $ro_list[] = ['nama_ro' => '', 'narasi' => $poin . ($tambahan !== '' ? ': ' . $tambahan : ''), 'foto' => $foto_poin[$i + 1] ?? []];
         }
     }
+    // Uraian kegiatan per RO (manual, opsional): id = -(1000000 + id_RO*1000 + urutan).
+    // Kolom iku_kode pada foto mungkin belum ada (sql/ck_ro_bukti_foto_iku.sql) → uraian dilewati.
+    $uraian_per_ro = [];
+    if (($_GET['mode'] ?? '') !== 'tl') {
+        try {
+            $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id <= -1000000 ORDER BY ro_master_id DESC");
+            $stmt->execute([$pid, $kode]);
+            $uraian = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id <= -1000000 ORDER BY urutan, id");
+            $stmt->execute([$pid, $kode]);
+            $foto_uraian = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                $foto_uraian[$f['ro_master_id']][] = [
+                    'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
+                    'keterangan' => $f['keterangan'],
+                ];
+            }
+            foreach ($uraian as $id => $narasi) {
+                $ro_id = intdiv(-$id - 1000000, 1000);
+                $uraian_per_ro[$ro_id][] = ['narasi' => (string)$narasi, 'foto' => $foto_uraian[$id] ?? []];
+            }
+        } catch (PDOException $e) { /* migrasi belum dijalankan */ }
+    }
+
     foreach ($ros as $ro) {
         $nama = trim(preg_replace('/^\d+\s+[A-Z]{3}\s+\w+\.\s*/', '', $ro['nama_ro']));
         $ro_list[] = [
             'nama_ro' => $nama !== '' ? $nama : $ro['nama_ro'],
             'narasi'  => (string)($ro['narasi'] ?? ''),
             'foto'    => $foto_per_ro[$ro['id']] ?? [],
+            'uraian'  => $uraian_per_ro[$ro['id']] ?? [],
         ];
     }
 

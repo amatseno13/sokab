@@ -420,6 +420,13 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
         </div>
     </div>
 
+    <?php
+    // Uraian kegiatan per RO (opsional): ck_entry_ro dengan ro_master_id = -(1000000 + id_RO*1000 + urutan).
+    // ponytail: id negatif + iku_kode, tanpa tabel baru; maks. 999 uraian per RO.
+    $stmt = $db->prepare("SELECT ro_master_id AS id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id <= -1000000 ORDER BY ro_master_id DESC");
+    $stmt->execute([$periode_id, $kode]);
+    $uraian_awal = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    ?>
     <!-- BAGIAN 3: RINCIAN OUTPUT -->
     <div class="section tab-panel" id="tab-panel-3">
         <div class="section-title">📋 Bagian 3 — Rincian Output (Sub-sheet <?= htmlspecialchars($kode) ?>)</div>
@@ -463,6 +470,18 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
                         <input type="file" class="foto-input" data-ro-id="<?= $ro['id'] ?>" data-periode-id="<?= $periode_id ?>"
                             accept="image/png,image/jpeg" multiple style="display:none"
                             onchange="unggahFoto(this)">
+                        <button type="button" class="btn-foto" title="Opsional — kalau laporan sudah ada"
+                            onclick="pilihFoto(<?= $ro['id'] ?>, <?= $periode_id ?>, true)">📄 Upload PDF Laporan</button>
+                        <input type="file" class="foto-input" data-pdf="1" data-ro-id="<?= $ro['id'] ?>" data-periode-id="<?= $periode_id ?>"
+                            accept="application/pdf" multiple style="display:none"
+                            onchange="unggahFoto(this)">
+                    </td>
+                </tr>
+                <tr class="uraian-row">
+                    <td colspan="5" style="background:#faf7f2">
+                        <div style="font-size:.78rem;font-weight:700;margin-bottom:.4rem">Uraian Kegiatan <span style="font-weight:400;color:var(--ink-faint)">(opsional — mis. tahapan kegiatan; foto bukti dipasang di tiap uraian)</span></div>
+                        <div class="uraian-list" id="uraian-list-<?= $ro['id'] ?>"></div>
+                        <button type="button" class="btn-foto" onclick="tambahUraian(<?= $ro['id'] ?>)">➕ Tambah Uraian Kegiatan</button>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -471,6 +490,7 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
         <?php else: ?>
         <p class="no-ro">Tidak ada Rincian Output untuk IKU ini.</p>
         <?php endif; ?>
+
     </div>
 
     <!-- BAGIAN 4: TINDAK LANJUT TW SEBELUMNYA (riwayat, hanya foto bisa ditambah) -->
@@ -509,7 +529,7 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
             preg_split('/\R/', (string)($entry_sblm['rtl'] ?? ''))
         ), fn($l) => $l !== ''));
         // Narasi tambahan (opsional) per poin: ck_entry_ro dengan ro_master_id negatif yang sama.
-        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id < 0");
+        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999 AND -1");
         $stmt->execute([$periode_sblm['id'], $kode]);
         $narasi_poin = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
         ?>
@@ -638,7 +658,7 @@ async function simpanSemua() {
         // Simpan RO rows
         // ':not(.ro-table-sblm)' wajib — Bagian 4 (Tindak Lanjut) pakai ro_master_id yang
         // SAMA dengan Bagian 3 tapi read-only; tanpa ini datanya bisa tertimpa kosong.
-        const roRows = document.querySelectorAll('.ro-table:not(.ro-table-sblm) tbody tr[data-ro-id]');
+        const roRows = document.querySelectorAll('.ro-table:not(.ro-table-sblm):not(.uraian-table) tbody tr[data-ro-id]');
         for (const row of roRows) {
             const roId   = parseInt(row.dataset.roId);
             const vol    = row.querySelector('.ro-vol')?.value;
@@ -661,6 +681,23 @@ async function simpanSemua() {
             }).then(r => r.json());
 
             if (!r2.success) throw new Error('Gagal simpan RO: ' + r2.message);
+        }
+
+        // Uraian kegiatan tambahan (Bagian 3) — hanya yang berubah
+        for (const ta of document.querySelectorAll('.uraian-narasi')) {
+            if (ta.value === ta.dataset.awal) continue;
+            const r4 = await fetch(`${API}?action=save_ro`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    periode_id:   PERIODE_ID,
+                    ro_master_id: parseInt(ta.closest('[data-ro-id]').dataset.roId),
+                    iku_kode:     IKU_KODE,
+                    narasi:       ta.value || null,
+                })
+            }).then(r => r.json());
+            if (!r4.success) throw new Error('Gagal simpan uraian kegiatan: ' + r4.message);
+            ta.dataset.awal = ta.value;
         }
 
         // Narasi tindak lanjut per poin (Bagian 4) — hanya yang berubah
@@ -880,8 +917,10 @@ function renderGaleriFoto(periodeId, roId, daftar) {
     if (!el) return;
     el.innerHTML = (daftar || []).map(f => `
         <div class="foto-thumb" data-foto-id="${f.id}">
-            <img src="../../${f.file_path}" onclick="window.open('../../${f.file_path}','_blank')"
-                 alt="${(f.keterangan || f.original_name || '').replace(/"/g,'')}">
+            ${/\.pdf$/i.test(f.file_path)
+                ? `<a href="../../${f.file_path}" target="_blank" style="font-size:.7rem;padding:.3rem;word-break:break-all">📄 ${esc(f.original_name || 'laporan.pdf')}</a>`
+                : `<img src="../../${f.file_path}" onclick="window.open('../../${f.file_path}','_blank')"
+                 alt="${(f.keterangan || f.original_name || '').replace(/"/g,'')}">`}
             <button class="hapus" title="Hapus foto" onclick="hapusFoto(${f.id}, ${roId}, ${periodeId})">✕</button>
         </div>`).join('');
 }
@@ -889,7 +928,7 @@ function renderGaleriFoto(periodeId, roId, daftar) {
 async function muatFotoUntukPeriode(periodeId, rowSelector) {
     if (!periodeId) return;
     try {
-        const r = await fetch(`${API}?action=foto_list&periode_id=${periodeId}`).then(r => r.json());
+        const r = await fetch(`${API}?action=foto_list&periode_id=${periodeId}&iku_kode=${encodeURIComponent(IKU_KODE)}`).then(r => r.json());
         if (!r.success) return;
         document.querySelectorAll(rowSelector).forEach(row => {
             const roId = parseInt(row.dataset.roId);
@@ -898,15 +937,60 @@ async function muatFotoUntukPeriode(periodeId, rowSelector) {
     } catch (e) { /* galeri kosong, biarkan */ }
 }
 
+// ── Uraian Kegiatan per RO (opsional) ──────────────────
+// id uraian = -(1000000 + id_RO*1000 + urutan)
+const URAIAN_AWAL = <?= json_encode($uraian_awal) ?>;
+const esc = t => String(t ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const roDariUraian = id => Math.floor((-id - 1000000) / 1000);
+
+function barisUraian(id, narasi) {
+    return `<div class="uraian-item" data-ro-id="${id}" style="display:grid;grid-template-columns:1fr 240px 32px;gap:.7rem;margin-bottom:.6rem;align-items:start">
+        <textarea class="uraian-narasi" rows="2" placeholder="Uraikan kegiatan / tahapan..."
+            data-awal="${esc(narasi)}" oninput="markDirty()">${esc(narasi)}</textarea>
+        <div>
+            <div class="foto-galeri" id="foto-galeri-${PERIODE_ID}-${id}"></div>
+            <button type="button" class="btn-foto" onclick="pilihFoto(${id}, ${PERIODE_ID})">📷 Tambah Foto</button>
+            <input type="file" class="foto-input" data-ro-id="${id}" data-periode-id="${PERIODE_ID}"
+                accept="image/png,image/jpeg" multiple style="display:none" onchange="unggahFoto(this)">
+        </div>
+        <button type="button" class="hapus" title="Hapus uraian" onclick="hapusUraian(${id})">✕</button>
+    </div>`;
+}
+
+function tambahUraian(roId) {
+    const list = document.getElementById(`uraian-list-${roId}`);
+    const urut = [...list.children].map(el => roDariUraian(parseInt(el.dataset.roId)) === roId
+        ? (-parseInt(el.dataset.roId) - 1000000) % 1000 : 0);
+    const id = -(1000000 + roId * 1000 + Math.max(0, ...urut) + 1);
+    list.insertAdjacentHTML('beforeend', barisUraian(id, ''));
+    markDirty();
+}
+
+async function hapusUraian(id) {
+    if (!confirm('Hapus uraian ini beserta semua fotonya?')) return;
+    try {
+        const r = await fetch(`${API}?action=uraian_hapus`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({periode_id: PERIODE_ID, ro_master_id: id, iku_kode: IKU_KODE})
+        }).then(r => r.json());
+        if (!r.success) throw new Error(r.message);
+        document.querySelector(`.uraian-item[data-ro-id="${id}"]`)?.remove();
+    } catch (e) { showToast('Gagal hapus: ' + e.message, false); }
+}
+
+URAIAN_AWAL.forEach(u => document.getElementById(`uraian-list-${roDariUraian(u.id)}`)
+    ?.insertAdjacentHTML('beforeend', barisUraian(u.id, u.narasi)));
+
 function muatSemuaFoto() {
-    muatFotoUntukPeriode(PERIODE_ID, '.ro-table:not(.ro-table-sblm) tbody tr[data-ro-id]');
+    muatFotoUntukPeriode(PERIODE_ID, '.ro-table:not(.ro-table-sblm) tbody tr[data-ro-id], .uraian-item');
     if (PERIODE_ID_SBLM) {
         muatFotoUntukPeriode(PERIODE_ID_SBLM, '.ro-table-sblm tbody tr[data-ro-id]');
     }
 }
 
-function pilihFoto(roId, periodeId) {
-    document.querySelector(`.foto-input[data-ro-id="${roId}"][data-periode-id="${periodeId}"]`).click();
+function pilihFoto(roId, periodeId, pdf = false) {
+    document.querySelector(`.foto-input[data-ro-id="${roId}"][data-periode-id="${periodeId}"]${pdf ? '[data-pdf]' : ':not([data-pdf])'}`).click();
 }
 
 async function unggahFoto(inputEl) {
@@ -917,18 +1001,21 @@ async function unggahFoto(inputEl) {
     const galeri = document.getElementById(`foto-galeri-${periodeId}-${roId}`);
 
     for (const file of files) {
-        if (!['image/png', 'image/jpeg'].includes(file.type)) {
-            showToast(`${file.name}: hanya PNG/JPG yang diterima`, false);
+        const pdf = inputEl.hasAttribute('data-pdf');
+        if (!(pdf ? ['application/pdf'] : ['image/png', 'image/jpeg']).includes(file.type)) {
+            showToast(`${file.name}: ${pdf ? 'hanya PDF' : 'hanya PNG/JPG'} yang diterima`, false);
             continue;
         }
         const placeholder = document.createElement('div');
         placeholder.className = 'foto-thumb uploading';
-        placeholder.innerHTML = '<img src="' + URL.createObjectURL(file) + '">';
+        placeholder.innerHTML = pdf ? `<a style="font-size:.7rem;padding:.3rem">📄 ${esc(file.name)}</a>`
+                                    : '<img src="' + URL.createObjectURL(file) + '">';
         galeri.appendChild(placeholder);
 
         const fd = new FormData();
         fd.append('ro_master_id', roId);
         fd.append('periode_id', periodeId);
+        if (roId < 0) fd.append('iku_kode', IKU_KODE);   // poin tindak lanjut / uraian tambahan
         fd.append('file', file);
 
         try {

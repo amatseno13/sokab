@@ -286,8 +286,11 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
     $aktivitas = [];
     foreach ($roList as $ro) {
         $narasi = trim((string)($ro['narasi'] ?? ''));
-        if ($narasi === '') continue;
-        $aktivitas[] = trim(($ro['nama_ro'] ?? '') . ': ' . $narasi, ': ');
+        if ($narasi !== '') $aktivitas[] = trim(($ro['nama_ro'] ?? '') . ': ' . $narasi, ': ');
+        foreach (($ro['uraian'] ?? []) as $u) {
+            $t = trim((string)($u['narasi'] ?? ''));
+            if ($t !== '') $aktivitas[] = $t;
+        }
     }
     dsSisip($doc, $sectPr, dsP($aktivitas ? implode(' ', $aktivitas) : '-', ['align' => 'both', 'space_after' => 10]));
 
@@ -335,18 +338,26 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
     $roTerisi = 0; $fotoTerpasang = 0; $fotoGagal = [];
     $newRels = ''; // Relationship XML tambahan, disatukan di akhir
 
+    // Urutan tampil: tiap RO, lalu uraian kegiatan di bawahnya (masing-masing dengan fotonya).
+    // Label RO diambil dari narasi realisasi; nama RO cuma dipakai kalau narasinya kosong.
+    $tampil = [];
     foreach ($roList as $ro) {
-        // Label tiap bukti diambil dari narasi realisasi (bukan nama Rincian Output
-        // di katalog) — narasi lebih menjelaskan apa yang sungguh dikerjakan.
-        // Nama RO cuma dipakai kalau narasinya kosong, supaya foto tidak hilang begitu saja.
         $narasiRo = trim((string)($ro['narasi'] ?? ''));
         $namaRo   = trim((string)($ro['nama_ro'] ?? ''));
         $label    = $narasiRo !== '' ? $narasiRo : $namaRo;
-        if ($label === '') continue;
-        $roTerisi++;
-        dsSisip($doc, $sectPr, dsP('• ' . $label, ['bold' => true, 'space_after' => 6]));
+        if ($label !== '') $tampil[] = ['• ' . $label, $ro['foto'] ?? [], true];
+        foreach (($ro['uraian'] ?? []) as $u) {
+            $t = trim((string)($u['narasi'] ?? ''));
+            if ($t === '' && empty($u['foto'])) continue;
+            $tampil[] = ['– ' . ($t !== '' ? $t : '(tanpa uraian)'), $u['foto'] ?? [], false];
+        }
+    }
 
-        foreach (($ro['foto'] ?? []) as $foto) {
+    foreach ($tampil as [$teks, $fotoList, $utama]) {
+        if ($utama) $roTerisi++;
+        dsSisip($doc, $sectPr, dsP($teks, ['bold' => $utama, 'space_after' => 6]));
+
+        foreach ($fotoList as $foto) {
             $path = $foto['path'] ?? '';
             if (!$path || !is_file($path)) { $fotoGagal[] = $path ?: '(kosong)'; continue; }
 

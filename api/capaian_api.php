@@ -307,13 +307,20 @@ switch ($act) {
         $periode_id = (int)($_GET['periode_id'] ?? 0);
         if (!$periode_id) json_err('periode_id required');
 
-        $stmt = $db->prepare("
-            SELECT id, ro_master_id, file_path, original_name, keterangan, urutan
-            FROM ck_ro_bukti_foto
-            WHERE periode_id = ?
-            ORDER BY ro_master_id, urutan, id
-        ");
-        $stmt->execute([$periode_id]);
+        // id negatif (poin tindak lanjut / uraian tambahan) hanya milik IKU yang dibuka.
+        // Kolom iku_kode mungkin belum ada (sql/ck_ro_bukti_foto_iku.sql) → hanya foto RO biasa.
+        $kode = $_GET['iku_kode'] ?? '';
+        $sql  = "SELECT id, ro_master_id, file_path, original_name, keterangan, urutan
+                 FROM ck_ro_bukti_foto WHERE periode_id = ? AND (ro_master_id > 0 OR iku_kode = ?)
+                 ORDER BY ro_master_id, urutan, id";
+        try {
+            $stmt = $db->prepare($sql);
+            $stmt->execute([$periode_id, $kode]);
+        } catch (PDOException $e) {
+            $stmt = $db->prepare("SELECT id, ro_master_id, file_path, original_name, keterangan, urutan
+                FROM ck_ro_bukti_foto WHERE periode_id = ? AND ro_master_id > 0 ORDER BY ro_master_id, urutan, id");
+            $stmt->execute([$periode_id]);
+        }
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $per_ro = [];
@@ -338,12 +345,12 @@ switch ($act) {
         }
 
         $f = $_FILES['file'];
-        if ($f['size'] > 8 * 1024 * 1024) json_err('Ukuran foto maksimal 8 MB');
+        if ($f['size'] > 20 * 1024 * 1024) json_err('Ukuran file maksimal 20 MB');
 
         $finfo = new finfo(FILEINFO_MIME_TYPE);
         $mime  = $finfo->file($f['tmp_name']);
-        $ext_by_mime = ['image/png' => 'png', 'image/jpeg' => 'jpg'];
-        if (!isset($ext_by_mime[$mime])) json_err('Hanya file PNG atau JPG yang diizinkan');
+        $ext_by_mime = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'application/pdf' => 'pdf'];
+        if (!isset($ext_by_mime[$mime])) json_err('Hanya file PNG, JPG, atau PDF yang diizinkan');
 
         $dir = __DIR__ . '/../uploads/bukti_ro/';
         if (!is_dir($dir)) @mkdir($dir, 0775, true);
@@ -358,11 +365,15 @@ switch ($act) {
         $urutan = (int)$stmt->fetchColumn();
 
         $file_path = 'uploads/bukti_ro/' . $filename;
+        // Foto non-RO (id negatif) wajib membawa iku_kode supaya tidak bercampur antar IKU
+        $iku = $ro_master_id < 0 ? trim($_POST['iku_kode'] ?? '') : null;
+        if ($ro_master_id < 0 && $iku === '') { @unlink($dest); json_err('iku_kode required'); }
         $stmt = $db->prepare("
-            INSERT INTO ck_ro_bukti_foto (ro_master_id, periode_id, file_path, original_name, keterangan, urutan, uploaded_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ck_ro_bukti_foto (ro_master_id, periode_id, " . ($iku ? 'iku_kode, ' : '') . "file_path, original_name, keterangan, urutan, uploaded_by)
+            VALUES (?, ?, " . ($iku ? '?, ' : '') . "?, ?, ?, ?, ?)
         ");
-        $stmt->execute([$ro_master_id, $periode_id, $file_path, $f['name'], $keterangan ?: null, $urutan, user_id()]);
+        $stmt->execute(array_merge([$ro_master_id, $periode_id], $iku ? [$iku] : [],
+            [$file_path, $f['name'], $keterangan ?: null, $urutan, user_id()]));
 
         json_ok(['id' => (int)$db->lastInsertId(), 'file_path' => $file_path]);
 
@@ -382,6 +393,25 @@ switch ($act) {
 
         $db->prepare("DELETE FROM ck_ro_bukti_foto WHERE id = ?")->execute([$id]);
         json_ok(['message' => 'Foto dihapus']);
+
+    // ── POST: hapus satu uraian kegiatan tambahan (+ semua fotonya) ──
+    case 'uraian_hapus':
+        $body = body();
+        $periode_id   = (int)($body['periode_id'] ?? 0);
+        $ro_master_id = (int)($body['ro_master_id'] ?? 0);
+        $iku_kode     = $body['iku_kode'] ?? '';
+        if (!$periode_id || $ro_master_id > -1000000 || !$iku_kode) json_err('parameter tidak valid');
+
+        $stmt = $db->prepare("SELECT id, file_path FROM ck_ro_bukti_foto WHERE periode_id = ? AND ro_master_id = ? AND iku_kode = ?");
+        $stmt->execute([$periode_id, $ro_master_id, $iku_kode]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $abs = __DIR__ . '/../' . $row['file_path'];
+            if (is_file($abs)) @unlink($abs);
+            $db->prepare("DELETE FROM ck_ro_bukti_foto WHERE id = ?")->execute([$row['id']]);
+        }
+        $db->prepare("DELETE FROM ck_entry_ro WHERE periode_id = ? AND ro_master_id = ? AND iku_kode = ?")
+           ->execute([$periode_id, $ro_master_id, $iku_kode]);
+        json_ok(['message' => 'Uraian dihapus']);
 
     default:
         json_err("Action '$act' tidak dikenal");

@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS ck_ro_bukti_foto (
     id            INT AUTO_INCREMENT PRIMARY KEY,
     ro_master_id  INT NOT NULL,
     periode_id    INT NOT NULL,
+    iku_kode      VARCHAR(20) DEFAULT NULL,
     file_path     VARCHAR(255) NOT NULL,
     original_name VARCHAR(255) DEFAULT NULL,
     keterangan    VARCHAR(255) DEFAULT NULL,
