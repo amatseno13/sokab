@@ -31,6 +31,7 @@ if (!$default_periode && $periodes) $default_periode = $periodes[0];
 <html lang="id">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" type="image/png" href="../../assets/images/logo-bps.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Generate Notula — SOKAB</title>
 <style>

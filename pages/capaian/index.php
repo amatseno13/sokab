@@ -38,6 +38,7 @@ if (!$tw_default && !empty($per_tahun[$tahun_default])) $tw_default = $per_tahun
 <html lang="id">
 <head>
 <meta charset="UTF-8">
+<link rel="icon" type="image/png" href="../../assets/images/logo-bps.png">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Capaian Kinerja Triwulanan — SOKAB</title>
 <style>
