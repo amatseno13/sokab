@@ -633,7 +633,7 @@ case 'generate_dokumen_sumber':
             $anak = [];
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $n) $anak[(int)$n['ro_master_id']][(int)$n['parent_id']][] = $n;
 
-            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id <= -10000000 ORDER BY urutan, id");
+            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id BETWEEN -19999999 AND -10000000 ORDER BY urutan, id");
             $stmt->execute([$pid, $kode]);
             $foto_node = [];
             foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
@@ -692,6 +692,24 @@ case 'generate_dokumen_sumber':
         'ro_list'      => $ro_list,
     ];
 
+    // jenis=solusi: dokumen terpisah "Bukti Dokumen Sumber Solusi Dari Kendala".
+    // Foto per poin solusi disimpan dengan ro_master_id = -(20000000 + nomor poin).
+    $jenis_solusi = ($_GET['jenis'] ?? '') === 'solusi';
+    if ($jenis_solusi) {
+        $payload['hanya_solusi'] = true;
+        $payload['solusi_foto']  = [];
+        try {
+            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id <= -20000000 ORDER BY urutan, id");
+            $stmt->execute([$pid, $kode]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                $payload['solusi_foto'][-$f['ro_master_id'] - 20000000][] = [
+                    'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
+                    'keterangan' => $f['keterangan'],
+                ];
+            }
+        } catch (PDOException $e) { /* kolom iku_kode belum ada */ }
+    }
+
     $out_path = NOTULA_TMP . '/dsum_out_' . bin2hex(random_bytes(8)) . '.docx';
 
     try {
@@ -703,7 +721,7 @@ case 'generate_dokumen_sumber':
     }
 
     $kode_bersih = trim(preg_replace('/[^A-Za-z0-9]+/', '_', $kode), '_');
-    $filename = sprintf('Bukti_Dokumen_Sumber_%s_TW%s_%d.docx', $kode_bersih, $tw, $periode['tahun']);
+    $filename = sprintf(($jenis_solusi ? 'Bukti_Solusi_Kendala_' : 'Bukti_Dokumen_Sumber_') . '%s_TW%s_%d.docx', $kode_bersih, $tw, $periode['tahun']);
 
     header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     header('Content-Disposition: attachment; filename="' . $filename . '"');

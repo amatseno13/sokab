@@ -368,8 +368,15 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
         <div class="form-row">
             <div class="form-group" style="grid-column:1/-1">
                 <label>Solusi yang Sudah Dilakukan</label>
-                <textarea id="solusi" rows="4" placeholder="Uraikan solusi yang sudah dilakukan..."
-                    oninput="markDirty()"><?= val($entry, 'solusi') ?></textarea>
+                <textarea id="solusi" rows="4" placeholder="Uraikan solusi yang sudah dilakukan (satu baris = satu poin)..."
+                    oninput="markDirty(); renderSolusiBukti()"><?= val($entry, 'solusi') ?></textarea>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group" style="grid-column:1/-1">
+                <label>Bukti Dokumentasi Solusi <span style="font-weight:400;color:var(--ink-faint)">(opsional — foto per poin solusi)</span></label>
+                <div id="solusi-bukti"></div>
+                <div style="font-size:.75rem;color:var(--ink-faint)" id="solusi-bukti-kosong">Tulis solusi di atas, tiap poin di baris sendiri, lalu tambahkan foto buktinya di sini.</div>
             </div>
         </div>
         <div class="form-row">
@@ -417,6 +424,14 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
                     placeholder="https://..." oninput="markDirty()">
                 <div class="ikss-hint" id="hint-tl"></div>
             </div>
+        </div>
+
+        <div style="margin-top:1.2rem;padding-top:1rem;border-top:1px dashed var(--line, #e5ded3)">
+            <button type="button" class="btn-doksum" id="btn-solusi"
+                onclick="generateDokumenSumber(PERIODE_ID, 'btn-solusi', 'solusi-status', 'solusi')">
+                📄 Generate Bukti Solusi dari Kendala TW <?= $tw ?>
+            </button>
+            <span id="solusi-status" style="font-size:.78rem;color:var(--ink-faint);margin-left:.7rem"></span>
         </div>
     </div>
 
@@ -859,7 +874,7 @@ function generateDokumenSumberAktif() {
 
 // ── Generate Dokumen Sumber (narasi RO + foto bukti) ──
 // periodeId bisa periode aktif (Bagian 1-3) atau periode sebelumnya (Bagian 4 — Tindak Lanjut).
-async function generateDokumenSumber(periodeId, btnId, statusId) {
+async function generateDokumenSumber(periodeId, btnId, statusId, jenis = '') {
     const btn = document.getElementById(btnId);
     const st  = document.getElementById(statusId);
     if (periodeId === PERIODE_ID && isDirty &&
@@ -872,7 +887,7 @@ async function generateDokumenSumber(periodeId, btnId, statusId) {
     st.textContent = '⏳ Menyusun dokumen...';
 
     try {
-        const res = await fetch(`${API_NOTULA}?action=generate_dokumen_sumber&periode_id=${periodeId}&iku_kode=${encodeURIComponent(IKU_KODE)}${periodeId === PERIODE_ID_SBLM ? '&mode=tl' : ''}`);
+        const res = await fetch(`${API_NOTULA}?action=generate_dokumen_sumber&periode_id=${periodeId}&iku_kode=${encodeURIComponent(IKU_KODE)}${periodeId === PERIODE_ID_SBLM ? '&mode=tl' : ''}${jenis ? '&jenis=' + jenis : ''}`);
         const ct = res.headers.get('Content-Type') || '';
 
         if (ct.includes('application/json')) {
@@ -882,7 +897,7 @@ async function generateDokumenSumber(periodeId, btnId, statusId) {
 
         const blob = await res.blob();
         const disp = res.headers.get('Content-Disposition') || '';
-        const nama = (disp.match(/filename="(.+?)"/) || [])[1] || `Bukti_Dokumen_Sumber_${IKU_KODE}.docx`;
+        const nama = (disp.match(/filename="(.+?)"/) || [])[1] || `Bukti_${jenis ? 'Solusi_Kendala' : 'Dokumen_Sumber'}_${IKU_KODE}.docx`;
 
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -893,11 +908,11 @@ async function generateDokumenSumber(periodeId, btnId, statusId) {
         let extra = '';
         try {
             const info = JSON.parse(res.headers.get('X-Dokumen-Sumber-Info') || '{}');
-            extra = ` (${info.ro_terisi || 0} RO, ${info.foto_terpasang || 0} foto)`;
+            extra = jenis ? ` (${info.foto_terpasang || 0} foto)` : ` (${info.ro_terisi || 0} RO, ${info.foto_terpasang || 0} foto)`;
         } catch (e) { /* header opsional */ }
 
         st.textContent = '✅ Selesai' + extra;
-        showToast('Dokumen sumber berhasil dibuat' + extra, true);
+        showToast((jenis ? 'Bukti solusi kendala' : 'Dokumen sumber') + ' berhasil dibuat' + extra, true);
     } catch (e) {
         st.textContent = '❌ Gagal';
         showToast('Gagal generate: ' + e.message, false);
@@ -1032,8 +1047,41 @@ NODES_AWAL.filter(n => !n.parent).forEach(n => {
 });
 document.querySelectorAll('.node-root').forEach(r => renumber(r.id.replace('node-root-', '')));
 
+// ── Bukti dokumentasi solusi (foto per poin solusi) ─────
+// Poin = baris textarea solusi (nomor manual dibuang). Foto: ro_master_id = -(20000000 + nomor poin).
+// ponytail: foto terikat nomor poin; mengubah urutan baris menggeser fotonya.
+const poinSolusi = () => document.getElementById('solusi').value.split(/\r?\n/)
+    .map(l => l.trim().replace(/^\(?\d{1,2}\)?[.)\-:]\s*/, '')).filter(Boolean);
+let siapFotoSolusi = false;
+
+function renderSolusiBukti() {
+    const wadah = document.getElementById('solusi-bukti');
+    const pts = poinSolusi();
+    document.getElementById('solusi-bukti-kosong').style.display = pts.length ? 'none' : '';
+    pts.forEach((teks, i) => {
+        const n = i + 1, key = -(20000000 + n);
+        let el = wadah.querySelector(`.solusi-item[data-n="${n}"]`);
+        if (!el) {
+            wadah.insertAdjacentHTML('beforeend', `<div class="solusi-item" data-n="${n}" data-ro-id="${key}"
+                    style="display:grid;grid-template-columns:1fr 260px;gap:.7rem;margin-bottom:.5rem;padding:.5rem .6rem;background:#fff;border:1px solid var(--line, #e5ded3);border-radius:8px;align-items:start">
+                <div class="solusi-teks" style="font-size:.84rem"></div>
+                <div>
+                    <div class="foto-galeri" id="foto-galeri-${PERIODE_ID}-${key}"></div>
+                    <button type="button" class="btn-foto" onclick="pilihFoto(${key}, ${PERIODE_ID})">📷 Tambah Foto</button>
+                    <input type="file" class="foto-input" data-ro-id="${key}" data-periode-id="${PERIODE_ID}"
+                        accept="image/png,image/jpeg" multiple style="display:none" onchange="unggahFoto(this)">
+                </div></div>`);
+            el = wadah.lastElementChild;
+            if (siapFotoSolusi) muatFotoUntukPeriode(PERIODE_ID, `.solusi-item[data-n="${n}"]`);
+        }
+        el.querySelector('.solusi-teks').textContent = `${n}. ${teks}`;
+    });
+    wadah.querySelectorAll('.solusi-item').forEach(el => { if (+el.dataset.n > pts.length) el.remove(); });
+}
+renderSolusiBukti();
+
 function muatSemuaFoto() {
-    muatFotoUntukPeriode(PERIODE_ID, '.ro-table:not(.ro-table-sblm) tbody tr[data-ro-id], .node-item');
+    muatFotoUntukPeriode(PERIODE_ID, '.ro-table:not(.ro-table-sblm) tbody tr[data-ro-id], .node-item, .solusi-item');
     if (PERIODE_ID_SBLM) {
         muatFotoUntukPeriode(PERIODE_ID_SBLM, '.ro-table-sblm tbody tr[data-ro-id]');
     }
@@ -1101,6 +1149,7 @@ async function hapusFoto(fotoId, roId, periodeId) {
 document.addEventListener('DOMContentLoaded', () => {
     for (let i = 1; i <= 4; i++) hitungCapaian(i);
     muatSemuaFoto();
+    siapFotoSolusi = true;
 
     // Kedua field kosong → isi otomatis, tanpa perlu klik.
     // Kalau salah satu sudah terisi, biarkan; user bisa klik tombolnya sendiri.

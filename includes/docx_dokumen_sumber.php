@@ -212,6 +212,82 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
     $ridBerikut = $maxRid + 1;
     $imgIndex = 1;
 
+    $roTerisi = 0; $fotoTerpasang = 0; $fotoGagal = [];
+    $newRels = ''; // Relationship XML tambahan, disatukan di akhir
+
+    // Pasang daftar foto sebagai gambar di dokumen (dipakai bagian bukti & bagian solusi kendala)
+    $pasangFoto = function (array $fotoList) use ($doc, $sectPr, $zip, &$ridBerikut, &$imgIndex, &$newRels, &$fotoTerpasang, &$fotoGagal) {
+        foreach ($fotoList as $foto) {
+            $path = $foto['path'] ?? '';
+            if (!$path || !is_file($path)) { $fotoGagal[] = $path ?: '(kosong)'; continue; }
+
+            $ukuran = @getimagesize($path);
+            if (!$ukuran) { $fotoGagal[] = $path . ' (bukan gambar valid)'; continue; }
+            [$wPx, $hPx] = $ukuran;
+            if ($wPx <= 0 || $hPx <= 0) { $fotoGagal[] = $path . ' (dimensi tidak valid)'; continue; }
+
+            $mime = $ukuran['mime'] ?? '';
+            $extZip = $mime === 'image/jpeg' ? 'jpeg' : ($mime === 'image/png' ? 'png' : null);
+            if (!$extZip) { $fotoGagal[] = $path . " (tipe $mime tidak didukung)"; continue; }
+
+            $rid = 'rId' . $ridBerikut++;
+            $namaMedia = "image{$imgIndex}.{$extZip}";
+            $zip->addFromString("word/media/$namaMedia", file_get_contents($path));
+
+            $newRels .= '<Relationship Id="' . $rid . '" '
+                      . 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+                      . 'Target="media/' . $namaMedia . '"/>';
+
+            // Batasi lebar MAUPUN tinggi — foto HP kebanyakan potret (tinggi > lebar).
+            // Kalau cuma lebar dibatasi (11cm), foto potret jadi setinggi >14cm dan
+            // memenuhi lebih dari separuh halaman. Dipilih batas mana yang lebih ketat,
+            // supaya hasilnya selalu proporsional dan tidak pernah melebihi kotak 11×8cm.
+            $maxW = dsEmu(11.0);
+            $maxH = dsEmu(8.0);
+            $cx = $maxW;
+            $cy = (int)round($maxW * $hPx / $wPx);
+            if ($cy > $maxH) {
+                $cy = $maxH;
+                $cx = (int)round($maxH * $wPx / $hPx);
+            }
+
+            dsSisip($doc, $sectPr, dsGambar($rid, $cx, $cy, $imgIndex));
+            $imgIndex++;
+            $fotoTerpasang++;
+
+            $ket = trim((string)($foto['keterangan'] ?? ''));
+            if ($ket !== '') {
+                dsSisip($doc, $sectPr, dsP($ket, ['align' => 'center', 'color' => '64748B', 'size' => 8.5, 'space_after' => 10]));
+            } else {
+                dsSisip($doc, $sectPr, dsP('', ['space_after' => 6]));
+            }
+        }
+    };
+
+    // ── Dokumen khusus: Bukti Dokumen Sumber Solusi dari Kendala ──
+    if (!empty($data['hanya_solusi'])) {
+        $satkerS = (string)($data['satker'] ?? 'BPS Kabupaten/Kota');
+        dsSisip($doc, $sectPr, dsP('Bukti Dokumen Sumber Solusi Dari Kendala', ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 2]));
+        dsSisip($doc, $sectPr, dsP($satkerS . ' — TW ' . ($data['triwulan'] ?? '') . ' ' . ($data['tahun'] ?? ''), ['bold' => true, 'size' => 11, 'align' => 'center', 'space_after' => 2]));
+        dsSisip($doc, $sectPr, dsP(trim(($data['kode'] ?? '') . ' ' . ($data['nama'] ?? '')), ['size' => 10, 'align' => 'center', 'space_after' => 12]));
+
+        $kendalaS = dsBacaList($data['kendala'] ?? '');
+        $solusiS  = dsBacaList($data['solusi'] ?? '');
+        dsSisip($doc, $sectPr, dsP('Masalah :', ['bold' => true, 'space_after' => 2]));
+        foreach ($kendalaS ?: ['-'] as $i => $k) {
+            dsSisip($doc, $sectPr, dsP(($kendalaS ? ($i + 1) . '. ' : '') . $k, ['align' => 'both', 'space_after' => 2]));
+        }
+        dsSisip($doc, $sectPr, dsP('', ['space_after' => 6]));
+
+        dsSisip($doc, $sectPr, dsP('Solusi :', ['bold' => true, 'space_after' => 2]));
+        foreach ($solusiS ?: ['-'] as $i => $sl) {
+            dsSisip($doc, $sectPr, dsP(($solusiS ? ($i + 1) . '. ' : '') . $sl, ['align' => 'both', 'space_after' => 4]));
+            $pasangFoto($data['solusi_foto'][$i + 1] ?? []);
+        }
+        goto selesai;
+    }
+
+
     $satker = (string)($data['satker'] ?? 'BPS Kabupaten/Kota');
     $tw     = (string)($data['triwulan'] ?? 'I');
     $tahun  = (string)($data['tahun'] ?? date('Y'));
@@ -336,8 +412,6 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
     dsSisip($doc, $sectPr, dsP('Bukti Dokumen Sumber', ['bold' => true, 'size' => 10.5, 'space_after' => 4]));
     dsSisip($doc, $sectPr, dsP('Adapun Bukti Dokumen Sumber adalah sebagai berikut:', ['space_after' => 8]));
 
-    $roTerisi = 0; $fotoTerpasang = 0; $fotoGagal = [];
-    $newRels = ''; // Relationship XML tambahan, disatukan di akhir
 
     // Urutan tampil: tiap RO, lalu uraian kegiatan di bawahnya (masing-masing dengan fotonya).
     // Label RO diambil dari narasi realisasi; nama RO cuma dipakai kalau narasinya kosong.
@@ -359,53 +433,10 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
         if ($utama) $roTerisi++;
         dsSisip($doc, $sectPr, dsP($teks, ['bold' => $utama, 'space_after' => 6] + ($utama ? [] : ['indent_cm' => $indent ?? 0.6])));
 
-        foreach ($fotoList as $foto) {
-            $path = $foto['path'] ?? '';
-            if (!$path || !is_file($path)) { $fotoGagal[] = $path ?: '(kosong)'; continue; }
-
-            $ukuran = @getimagesize($path);
-            if (!$ukuran) { $fotoGagal[] = $path . ' (bukan gambar valid)'; continue; }
-            [$wPx, $hPx] = $ukuran;
-            if ($wPx <= 0 || $hPx <= 0) { $fotoGagal[] = $path . ' (dimensi tidak valid)'; continue; }
-
-            $mime = $ukuran['mime'] ?? '';
-            $extZip = $mime === 'image/jpeg' ? 'jpeg' : ($mime === 'image/png' ? 'png' : null);
-            if (!$extZip) { $fotoGagal[] = $path . " (tipe $mime tidak didukung)"; continue; }
-
-            $rid = 'rId' . $ridBerikut++;
-            $namaMedia = "image{$imgIndex}.{$extZip}";
-            $zip->addFromString("word/media/$namaMedia", file_get_contents($path));
-
-            $newRels .= '<Relationship Id="' . $rid . '" '
-                      . 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
-                      . 'Target="media/' . $namaMedia . '"/>';
-
-            // Batasi lebar MAUPUN tinggi — foto HP kebanyakan potret (tinggi > lebar).
-            // Kalau cuma lebar dibatasi (11cm), foto potret jadi setinggi >14cm dan
-            // memenuhi lebih dari separuh halaman. Dipilih batas mana yang lebih ketat,
-            // supaya hasilnya selalu proporsional dan tidak pernah melebihi kotak 11×8cm.
-            $maxW = dsEmu(11.0);
-            $maxH = dsEmu(8.0);
-            $cx = $maxW;
-            $cy = (int)round($maxW * $hPx / $wPx);
-            if ($cy > $maxH) {
-                $cy = $maxH;
-                $cx = (int)round($maxH * $wPx / $hPx);
-            }
-
-            dsSisip($doc, $sectPr, dsGambar($rid, $cx, $cy, $imgIndex));
-            $imgIndex++;
-            $fotoTerpasang++;
-
-            $ket = trim((string)($foto['keterangan'] ?? ''));
-            if ($ket !== '') {
-                dsSisip($doc, $sectPr, dsP($ket, ['align' => 'center', 'color' => '64748B', 'size' => 8.5, 'space_after' => 10]));
-            } else {
-                dsSisip($doc, $sectPr, dsP('', ['space_after' => 6]));
-            }
-        }
+        $pasangFoto($fotoList);
     }
 
+    selesai:
     // Tulis relationship baru ke document.xml.rels
     if ($newRels !== '') {
         $frag = $relsDoc->createDocumentFragment();
