@@ -710,6 +710,27 @@ case 'generate_dokumen_sumber':
         } catch (PDOException $e) { /* kolom iku_kode belum ada */ }
     }
 
+    // format=pdf: PDF disusun langsung dari data yang sama dengan Word (includes/pdf_dokumen_sumber.php)
+    if (($_GET['format'] ?? '') === 'pdf') {
+        require_once __DIR__ . '/../includes/pdf_dokumen_sumber.php';
+        try {
+            $pdf = buatDokumenSumberPdf($payload, $info_pdf);
+        } catch (Throwable $e) {
+            error_log('[SOKAB dokumen_sumber pdf] ' . $e->getMessage());
+            json_err('Gagal menyusun PDF: ' . $e->getMessage(), 500);
+        }
+        $kode_bersih = trim(preg_replace('/[^A-Za-z0-9]+/', '_', $kode), '_');
+        $nama_pdf = sprintf(($jenis_solusi ? 'Bukti_Solusi_Kendala_' : 'Bukti_Dokumen_Sumber_') . '%s_TW%s_%d.pdf', $kode_bersih, $tw, $periode['tahun']);
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $nama_pdf . '"');
+        header('Content-Length: ' . strlen($pdf));
+        header('X-Dokumen-Sumber-Info: ' . json_encode($info_pdf));
+        header('Access-Control-Expose-Headers: X-Dokumen-Sumber-Info');
+        header('Cache-Control: no-store');
+        echo $pdf;
+        exit;
+    }
+
     $out_path = NOTULA_TMP . '/dsum_out_' . bin2hex(random_bytes(8)) . '.docx';
 
     try {

@@ -278,7 +278,7 @@ tr:hover td{background:#fffaf5}
 
 <div class="toast" id="toast"></div>
 
-<script src="../../assets/js/konfirmasi.js"></script>
+<script src="../../assets/js/konfirmasi.js?v=<?= filemtime(__DIR__ . '/../../assets/js/konfirmasi.js') ?>"></script>
 <script>
 const API = '../../api/notula_api.php';
 const PERIODE_ID = <?= (int)($default_periode['id'] ?? 0) ?>;

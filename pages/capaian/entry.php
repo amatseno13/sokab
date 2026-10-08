@@ -596,7 +596,7 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
 
 <div class="toast" id="toast"></div>
 
-<script src="../../assets/js/konfirmasi.js"></script>
+<script src="../../assets/js/konfirmasi.js?v=<?= filemtime(__DIR__ . '/../../assets/js/konfirmasi.js') ?>"></script>
 <script>
 const API        = '../../api/capaian_api.php';
 const API_NOTULA = '../../api/notula_api.php';
@@ -876,6 +876,8 @@ function generateDokumenSumberAktif() {
 // ── Generate Dokumen Sumber (narasi RO + foto bukti) ──
 // periodeId bisa periode aktif (Bagian 1-3) atau periode sebelumnya (Bagian 4 — Tindak Lanjut).
 async function generateDokumenSumber(periodeId, btnId, statusId, jenis = '') {
+    const format = typeof pilihFormat === 'function' ? await pilihFormat() : 'word';   // JS lama di cache → langsung Word
+    if (!format) return;
     const btn = document.getElementById(btnId);
     const st  = document.getElementById(statusId);
     if (periodeId === PERIODE_ID && isDirty &&
@@ -884,11 +886,14 @@ async function generateDokumenSumber(periodeId, btnId, statusId, jenis = '') {
         return;
     }
 
+    const query = `action=generate_dokumen_sumber&periode_id=${periodeId}&iku_kode=${encodeURIComponent(IKU_KODE)}`
+        + `${periodeId === PERIODE_ID_SBLM ? '&mode=tl' : ''}${jenis ? '&jenis=' + jenis : ''}${format === 'pdf' ? '&format=pdf' : ''}`;
+
     btn.disabled = true;
     st.textContent = '⏳ Menyusun dokumen...';
 
     try {
-        const res = await fetch(`${API_NOTULA}?action=generate_dokumen_sumber&periode_id=${periodeId}&iku_kode=${encodeURIComponent(IKU_KODE)}${periodeId === PERIODE_ID_SBLM ? '&mode=tl' : ''}${jenis ? '&jenis=' + jenis : ''}`);
+        const res = await fetch(`${API_NOTULA}?${query}`);
         const ct = res.headers.get('Content-Type') || '';
 
         if (ct.includes('application/json')) {
@@ -898,7 +903,7 @@ async function generateDokumenSumber(periodeId, btnId, statusId, jenis = '') {
 
         const blob = await res.blob();
         const disp = res.headers.get('Content-Disposition') || '';
-        const nama = (disp.match(/filename="(.+?)"/) || [])[1] || `Bukti_${jenis ? 'Solusi_Kendala' : 'Dokumen_Sumber'}_${IKU_KODE}.docx`;
+        const nama = (disp.match(/filename="(.+?)"/) || [])[1] || `Bukti_${jenis ? 'Solusi_Kendala' : 'Dokumen_Sumber'}_${IKU_KODE}.${format === 'pdf' ? 'pdf' : 'docx'}`;
 
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1051,8 +1056,19 @@ document.querySelectorAll('.node-root').forEach(r => renumber(r.id.replace('node
 // ── Bukti dokumentasi solusi (foto per poin solusi) ─────
 // Poin = baris textarea solusi (nomor manual dibuang). Foto: ro_master_id = -(20000000 + nomor poin).
 // ponytail: foto terikat nomor poin; mengubah urutan baris menggeser fotonya.
-const poinSolusi = () => document.getElementById('solusi').value.split(/\r?\n/)
-    .map(l => l.trim().replace(/^\(?\d{1,2}\)?[.)\-:]\s*/, '')).filter(Boolean);
+const poinSolusi = () => {
+    // Sama dengan dsParsePoin() di PHP: ada baris bernomor → hanya itu poin (tanpa nomor sebelum poin pertama = judul,
+    // sesudahnya = lanjutan poin di atasnya); tanpa nomor sama sekali → tiap baris satu poin.
+    const re = /^\(?\d{1,2}\)?[.)\-:]\s*/;
+    const baris = document.getElementById('solusi').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (!baris.some(b => re.test(b))) return baris;
+    const poin = [];
+    baris.forEach(b => {
+        if (re.test(b)) poin.push(b.replace(re, ''));
+        else if (poin.length) poin[poin.length - 1] += ' ' + b;
+    });
+    return poin;
+};
 let siapFotoSolusi = false;
 
 function renderSolusiBukti() {

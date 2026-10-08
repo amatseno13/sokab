@@ -165,6 +165,63 @@ function dsBacaList(?string $teks): array {
 }
 
 /**
+ * Pisahkan teks bernomor menjadi judul + poin.
+ * Ada baris bernomor → hanya itu yang jadi poin; baris tanpa nomor sebelum poin pertama = judul,
+ * sesudahnya = lanjutan poin di atasnya. Tanpa nomor sama sekali → tiap baris satu poin.
+ * Aturan yang sama dipakai poinSolusi() di entry.php supaya nomor foto cocok.
+ */
+function dsParsePoin(?string $teks): array {
+    $baris = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', (string)$teks)), fn($b) => $b !== ''));
+    $ada = false;
+    foreach ($baris as $b) if (preg_match('/^\(?\d{1,2}\)?[.\)\-:]\s*/', $b)) { $ada = true; break; }
+    if (!$ada) return ['judul' => [], 'poin' => array_map('dsBuangNomor', $baris)];
+
+    $judul = []; $poin = [];
+    foreach ($baris as $b) {
+        if (preg_match('/^\(?\d{1,2}\)?[.\)\-:]\s*/', $b)) $poin[] = dsBuangNomor($b);
+        elseif ($poin) $poin[count($poin) - 1] .= ' ' . $b;
+        else $judul[] = $b;
+    }
+    return ['judul' => $judul, 'poin' => $poin];
+}
+
+/** Paragraf "Aktivitas yang dilakukan": narasi tiap RO + narasi uraian tingkat Kegiatan. Dipakai Word & tampilan cetak. */
+function dsAktivitas(array $roList): string {
+    $aktivitas = [];
+    foreach ($roList as $ro) {
+        $narasi = trim((string)($ro['narasi'] ?? ''));
+        if ($narasi !== '') $aktivitas[] = trim(($ro['nama_ro'] ?? '') . ': ' . $narasi, ': ');
+        foreach (($ro['uraian'] ?? []) as $u) {
+            $t = trim((string)($u['narasi'] ?? ''));
+            if ($t !== '' && ($u['level'] ?? 1) === 1) $aktivitas[] = $t;
+        }
+    }
+    return $aktivitas ? implode(' ', $aktivitas) : '-';
+}
+
+/**
+ * Urutan butir bukti: tiap RO, lalu uraian kegiatannya (masing-masing dengan foto).
+ * Label RO = narasi realisasi; nama RO hanya bila narasi kosong.
+ * @return array list of [teks, foto[], utama(bool), indent_cm]
+ */
+function dsSusunBukti(array $roList): array {
+    $tampil = [];
+    foreach ($roList as $ro) {
+        $narasiRo = trim((string)($ro['narasi'] ?? ''));
+        $namaRo   = trim((string)($ro['nama_ro'] ?? ''));
+        $label    = $narasiRo !== '' ? $narasiRo : $namaRo;
+        if ($label !== '') $tampil[] = ['• ' . $label, $ro['foto'] ?? [], true, 0];
+        foreach (($ro['uraian'] ?? []) as $u) {
+            $t = trim((string)($u['narasi'] ?? ''));
+            if ($t === '' && empty($u['foto'])) continue;
+            $lv = (int)($u['level'] ?? 1);
+            $tampil[] = [trim(($u['nomor'] ?? '') . ($lv === 1 ? '.' : '') . ' ' . ($t !== '' ? $t : '(tanpa uraian)')), $u['foto'] ?? [], false, $lv * 0.6];
+        }
+    }
+    return $tampil;
+}
+
+/**
  * Bangun dokumen Bukti Dokumen Sumber dari nol, pakai template kosong (A4 + margin saja).
  * $data harus punya struktur sama dengan generate_dokumen_sumber.py.
  */
@@ -266,22 +323,24 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
 
     // ── Dokumen khusus: Bukti Dokumen Sumber Solusi dari Kendala ──
     if (!empty($data['hanya_solusi'])) {
-        $satkerS = (string)($data['satker'] ?? 'BPS Kabupaten/Kota');
-        dsSisip($doc, $sectPr, dsP('Bukti Dokumen Sumber Solusi Dari Kendala', ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 2]));
-        dsSisip($doc, $sectPr, dsP($satkerS . ' — TW ' . ($data['triwulan'] ?? '') . ' ' . ($data['tahun'] ?? ''), ['bold' => true, 'size' => 11, 'align' => 'center', 'space_after' => 2]));
-        dsSisip($doc, $sectPr, dsP(trim(($data['kode'] ?? '') . ' ' . ($data['nama'] ?? '')), ['size' => 10, 'align' => 'center', 'space_after' => 12]));
+        dsSisip($doc, $sectPr, dsP('Bukti Dokumen Sumber Solusi Dari Kendala', ['bold' => true, 'size' => 14, 'align' => 'center', 'space_after' => 2]));
+        dsSisip($doc, $sectPr, dsP('Triwulan ' . ($data['triwulan'] ?? '') . ' ' . ($data['tahun'] ?? ''), ['bold' => true, 'size' => 14, 'align' => 'center', 'space_after' => 8]));
+        dsSisip($doc, $sectPr, dsP(trim(($data['kode'] ?? '') . ' ' . ($data['nama'] ?? '')), ['bold' => true, 'size' => 12, 'align' => 'center', 'space_after' => 12]));
 
-        $kendalaS = dsBacaList($data['kendala'] ?? '');
-        $solusiS  = dsBacaList($data['solusi'] ?? '');
-        dsSisip($doc, $sectPr, dsP('Masalah :', ['bold' => true, 'space_after' => 2]));
-        foreach ($kendalaS ?: ['-'] as $i => $k) {
-            dsSisip($doc, $sectPr, dsP(($kendalaS ? ($i + 1) . '. ' : '') . $k, ['align' => 'both', 'space_after' => 2]));
+        $kendalaS = dsParsePoin($data['kendala'] ?? '');
+        $solusiS  = dsParsePoin($data['solusi'] ?? '');
+
+        dsSisip($doc, $sectPr, dsP('Masalah :', ['bold' => true, 'size' => 11, 'space_after' => 2]));
+        foreach ($kendalaS['judul'] as $j) dsSisip($doc, $sectPr, dsP($j, ['bold' => true, 'size' => 11, 'space_after' => 2]));
+        foreach ($kendalaS['poin'] ?: ['-'] as $i => $k) {
+            dsSisip($doc, $sectPr, dsP(($kendalaS['poin'] ? ($i + 1) . '. ' : '') . $k, ['size' => 11, 'align' => 'both', 'space_after' => 2]));
         }
         dsSisip($doc, $sectPr, dsP('', ['space_after' => 6]));
 
-        dsSisip($doc, $sectPr, dsP('Solusi :', ['bold' => true, 'space_after' => 2]));
-        foreach ($solusiS ?: ['-'] as $i => $sl) {
-            dsSisip($doc, $sectPr, dsP(($solusiS ? ($i + 1) . '. ' : '') . $sl, ['align' => 'both', 'space_after' => 4]));
+        dsSisip($doc, $sectPr, dsP('Solusi :', ['bold' => true, 'size' => 11, 'space_after' => 2]));
+        foreach ($solusiS['judul'] as $j) dsSisip($doc, $sectPr, dsP($j, ['bold' => true, 'size' => 11, 'space_after' => 2]));
+        foreach ($solusiS['poin'] ?: ['-'] as $i => $sl) {
+            dsSisip($doc, $sectPr, dsP(($solusiS['poin'] ? ($i + 1) . '. ' : '') . $sl, ['size' => 11, 'align' => 'both', 'space_after' => 4]));
             $pasangFoto($data['solusi_foto'][$i + 1] ?? []);
         }
         goto selesai;
@@ -360,16 +419,7 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
     // ── Aktivitas yang dilakukan ──
     $roList = $data['ro_list'] ?? [];
     dsSisip($doc, $sectPr, dsP('Aktivitas yang dilakukan', ['bold' => true, 'space_after' => 2]));
-    $aktivitas = [];
-    foreach ($roList as $ro) {
-        $narasi = trim((string)($ro['narasi'] ?? ''));
-        if ($narasi !== '') $aktivitas[] = trim(($ro['nama_ro'] ?? '') . ': ' . $narasi, ': ');
-        foreach (($ro['uraian'] ?? []) as $u) {
-            $t = trim((string)($u['narasi'] ?? ''));
-            if ($t !== '' && ($u['level'] ?? 1) === 1) $aktivitas[] = $t;
-        }
-    }
-    dsSisip($doc, $sectPr, dsP($aktivitas ? implode(' ', $aktivitas) : '-', ['align' => 'both', 'space_after' => 10]));
+    dsSisip($doc, $sectPr, dsP(dsAktivitas($roList), ['align' => 'both', 'space_after' => 10]));
 
     // ── Kendala ──
     $kendalaList = dsBacaList($data['kendala'] ?? '');
@@ -413,21 +463,7 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
     dsSisip($doc, $sectPr, dsP('Adapun Bukti Dokumen Sumber adalah sebagai berikut:', ['space_after' => 8]));
 
 
-    // Urutan tampil: tiap RO, lalu uraian kegiatan di bawahnya (masing-masing dengan fotonya).
-    // Label RO diambil dari narasi realisasi; nama RO cuma dipakai kalau narasinya kosong.
-    $tampil = [];
-    foreach ($roList as $ro) {
-        $narasiRo = trim((string)($ro['narasi'] ?? ''));
-        $namaRo   = trim((string)($ro['nama_ro'] ?? ''));
-        $label    = $narasiRo !== '' ? $narasiRo : $namaRo;
-        if ($label !== '') $tampil[] = ['• ' . $label, $ro['foto'] ?? [], true, 0];
-        foreach (($ro['uraian'] ?? []) as $u) {
-            $t = trim((string)($u['narasi'] ?? ''));
-            if ($t === '' && empty($u['foto'])) continue;
-            $lv = (int)($u['level'] ?? 1);
-            $tampil[] = [trim(($u['nomor'] ?? '') . ($lv === 1 ? '.' : '') . ' ' . ($t !== '' ? $t : '(tanpa uraian)')), $u['foto'] ?? [], false, $lv * 0.6];
-        }
-    }
+    $tampil = dsSusunBukti($roList);
 
     foreach ($tampil as [$teks, $fotoList, $utama, $indent]) {
         if ($utama) $roTerisi++;
