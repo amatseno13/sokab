@@ -191,6 +191,21 @@ function dxSisipSetelahLabel(DOMDocument $doc, DOMElement $tc, string $label,
     return false;
 }
 
+/**
+ * Template contoh berisi isian TW I di bawah tiap label (Kendala :, Solusi :, RTL, PIC, batas waktu,
+ * tautan, narasi RO). Isian baru hanya DISISIPKAN setelah label, jadi contoh lama ikut terbawa dan
+ * dokumen TW lain terlihat berisi data TW I. Hapus semua paragraf contoh di bawah label sampai label
+ * berikutnya; isian baru lalu disisipkan di tempat kosong itu.
+ */
+function dxBuangContoh(DOMElement $tc): void {
+    $re = '/^(Realisasi Volume RO|Kendala|Solusi|Rencana Tindak Lanjut|PIC Tindak Lanjut|Batas Waktu Tindak Lanjut|Tautan Bukti Dukung|Jelaskan mengenai)\b.{0,250}?\s*:\s*(\(.*\))?$/isu';
+    $hapus = false;
+    foreach (dxParagraf($tc) as $p) {
+        if (preg_match($re, trim(dxTeks($p)))) { $hapus = true; continue; }
+        if ($hapus) $p->parentNode->removeChild($p);
+    }
+}
+
 /** Arial + spasi 1.15 + jarak bawah 6pt untuk seluruh dokumen. */
 function dxSeragamkanFont(DOMDocument $doc): void {
     foreach ($doc->getElementsByTagNameNS(W_NS, 'r') as $r) {
@@ -568,6 +583,7 @@ function isiNotulaDocx(array $data, string $template, string $output): array {
         foreach (dxAnak($target, 'tr') as $tr) {
             $sel = dxSel($tr);
             if (!$sel) continue;
+            foreach ($sel as $tc) dxBuangContoh($tc);
             $barisTeks = dxTeks($tr);
 
             // Baris data utama
