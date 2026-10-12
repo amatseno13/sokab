@@ -77,6 +77,18 @@ function ambilData(PDO $db, int $periode_id): array {
     $bln = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
             'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
 
+    // Angka TW lain dalam tahun yang sama sering tersimpan di periode TW itu sendiri, bukan di
+    // periode yang diekspor → kolom TW sebelumnya kosong di Excel. Isi dari periode tahun yang sama
+    // (periode TW i diutamakan) bila entri periode ini kosong.
+    $sib = $db->prepare("SELECT p.triwulan, e.* FROM ck_entry_iku e JOIN ck_periode p ON p.id = e.periode_id
+                         WHERE p.tahun = (SELECT tahun FROM ck_periode WHERE id = :pid)");
+    $sib->execute([':pid' => $periode_id]);
+    $lain = [];   // [iku_kode][tw 1-4][kolom] = nilai
+    foreach ($sib->fetchAll(PDO::FETCH_ASSOC) as $e) {
+        $tw = array_search($e['triwulan'], ['I', 'II', 'III', 'IV'], true) + 1;
+        foreach ($e as $k => $v) if ($v !== null && $v !== '' && preg_match('/_tw[1-4]$/', $k)) $lain[$e['iku_kode']][$tw][$k] = $v;
+    }
+
     $out = [];
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $batas = '';
@@ -100,6 +112,10 @@ function ambilData(PDO $db, int $periode_id): array {
             for ($i = 1; $i <= 4; $i++) {
                 $k = $p . '_tw' . $i;
                 $iku[$k] = $r[$k];
+                if ($iku[$k] === null || $iku[$k] === '') {
+                    $iku[$k] = $lain[$r['kode']][$i][$k] ?? null;
+                    if ($iku[$k] === null) foreach ($lain[$r['kode']] ?? [] as $v) if (isset($v[$k])) { $iku[$k] = $v[$k]; break; }
+                }
             }
         }
         $out[] = $iku;

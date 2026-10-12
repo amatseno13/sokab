@@ -180,7 +180,7 @@ function dsParsePoin(?string $teks): array {
 
     $out = []; $no = 0; $idx = 0;
     foreach ($baris as $b) {
-        if (!$ada)                     $out[] = ['judul' => false, 'teks' => $b, 'no' => ++$no, 'idx' => ++$idx];
+        if (!$ada && substr($b, -1) !== ':') $out[] = ['judul' => false, 'teks' => $b, 'no' => ++$no, 'idx' => ++$idx];   // tanpa penanda: baris berakhiran ":" tetap judul
         elseif (preg_match($re, $b))   $out[] = ['judul' => false, 'teks' => dsBuangNomor($b), 'no' => ++$no, 'idx' => ++$idx];
         else { $no = 0;                $out[] = ['judul' => true,  'teks' => $b, 'no' => null, 'idx' => null]; }
     }

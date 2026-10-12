@@ -1068,7 +1068,7 @@ const poinSolusi = () => {
     const ada = baris.some(b => re.test(b));
     const out = []; let no = 0, idx = 0, judul = '';
     baris.forEach(b => {
-        if (!ada) out.push({teks: b, no: ++no, idx: ++idx, judul: ''});
+        if (!ada && !b.endsWith(':')) out.push({teks: b, no: ++no, idx: ++idx, judul: ''});
         else if (re.test(b)) { out.push({teks: b.replace(re, ''), no: ++no, idx: ++idx, judul}); judul = ''; }
         else { no = 0; judul = judul ? judul + ' / ' + b : b; }
     });
