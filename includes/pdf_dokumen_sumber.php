@@ -116,25 +116,39 @@ class PdfDokumenSumber extends FPDF {
 function buatDokumenSumberPdf(array $d, ?array &$info = null): string {
     $p = new PdfDokumenSumber();
     $roTerisi = 0;
+    $tl = !empty($d['mode_tl']);
 
     if (!empty($d['hanya_solusi'])) {
         $p->para('Bukti Dokumen Sumber Solusi Dari Kendala', 14, true, 'C', 0, 1);
         $p->para('Triwulan ' . ($d['triwulan'] ?? '') . ' ' . ($d['tahun'] ?? ''), 14, true, 'C', 0, 3);
         $p->para(trim(($d['kode'] ?? '') . ' ' . ($d['nama'] ?? '')), 12, true, 'C', 0, 5);
 
-        $kendala = dsParsePoin($d['kendala'] ?? '');
-        $solusi  = dsParsePoin($d['solusi'] ?? '');
+        $kosong = [['judul' => false, 'teks' => '-', 'no' => null, 'idx' => null]];
+        $kendala = dsParsePoin($d['kendala'] ?? '') ?: $kosong;
+        $solusi  = dsParsePoin($d['solusi'] ?? '') ?: $kosong;
 
         $p->para('Masalah :', 11, true, 'L', 0, 1);
-        foreach ($kendala['judul'] as $j) $p->para($j, 11, true, 'L', 0, 1);
-        foreach ($kendala['poin'] ?: ['-'] as $i => $k) $p->para(($kendala['poin'] ? ($i + 1) . '. ' : '') . $k, 11, false, 'J', 0, 1);
+        foreach ($kendala as $it) {
+            if ($it['judul']) $p->para($it['teks'], 11, true, 'L', 0, 1);
+            else $p->para(($it['no'] ? $it['no'] . '. ' : '') . $it['teks'], 11, false, 'J', 0, 1);
+        }
         $p->Ln(3);
 
         $p->para('Solusi :', 11, true, 'L', 0, 1);
-        foreach ($solusi['judul'] as $j) $p->para($j, 11, true, 'L', 0, 1);
-        foreach ($solusi['poin'] ?: ['-'] as $i => $s) {
-            $p->para(($solusi['poin'] ? ($i + 1) . '. ' : '') . $s, 11, false, 'J', 0, 2);
-            $p->foto($d['solusi_foto'][$i + 1] ?? []);
+        foreach ($solusi as $it) {
+            if ($it['judul']) { $p->para($it['teks'], 11, true, 'L', 0, 1); continue; }
+            $p->para(($it['no'] ? $it['no'] . '. ' : '') . $it['teks'], 11, false, 'J', 0, 2);
+            if ($it['idx']) $p->foto($d['solusi_foto'][$it['idx']] ?? []);
+        }
+    } elseif ($tl) {
+        // Tindak Lanjut TW sebelumnya: hanya judul, indikator, poin RTL beserta dokumentasinya
+        $p->para('Bukti Dokumen Sumber Tindak Lanjut TW ' . ($d['triwulan'] ?? '') . ' ' . ($d['tahun'] ?? ''), 13, true, 'C', 0, 0.5);
+        $p->para((string)($d['satker'] ?? ''), 13, true, 'C', 0, 3);
+        $p->para(trim(($d['kode'] ?? '') . ' ' . ($d['nama'] ?? '')), 12, true, 'C', 0, 5);
+        foreach (dsSusunBukti($d['ro_list'] ?? [], true) as [$teks, $foto, $judul, $indent]) {
+            if (!$judul) $roTerisi++;
+            $p->para($teks, $judul ? 11 : 10, $judul, 'L', $indent * 10, 2);
+            $p->foto($foto);
         }
     } else {
         // ── Judul ──
@@ -177,10 +191,13 @@ function buatDokumenSumberPdf(array $d, ?array &$info = null): string {
         $p->para(dsAktivitas($roList), 10, false, 'J', 0, 4);
 
         foreach (['Kendala' => 'kendala', 'Solusi' => 'solusi'] as $label => $kunci) {
-            $list = dsBacaList($d[$kunci] ?? '');
-            if (!$list) continue;
+            $items = dsParsePoin($d[$kunci] ?? '');
+            if (!$items) continue;
             $p->para($label . ' :', 10, true, 'L', 0, 1);
-            foreach ($list as $i => $t) $p->para(($i + 1) . '. ' . $t, 10, false, 'J', 0, 1);
+            foreach ($items as $it) {
+                if ($it['judul']) $p->para($it['teks'], 10, true, 'L', 0, 1);
+                else $p->para($it['no'] . '. ' . $it['teks'], 10, false, 'J', 0, 1);
+            }
             $p->Ln(2);
         }
 

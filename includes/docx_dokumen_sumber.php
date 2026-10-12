@@ -165,24 +165,26 @@ function dsBacaList(?string $teks): array {
 }
 
 /**
- * Pisahkan teks bernomor menjadi judul + poin.
- * Ada baris bernomor → hanya itu yang jadi poin; baris tanpa nomor sebelum poin pertama = judul,
- * sesudahnya = lanjutan poin di atasnya. Tanpa nomor sama sekali → tiap baris satu poin.
- * Aturan yang sama dipakai poinSolusi() di entry.php supaya nomor foto cocok.
+ * Pisahkan teks menjadi subjudul dan poin bernomor.
+ * Ada baris bernomor → baris bernomor = poin, baris TANPA nomor = subjudul (nama kegiatan) dan
+ * nomor poin mulai dari 1 lagi di bawah tiap subjudul. Tanpa nomor sama sekali → tiap baris satu poin.
+ * 'idx' = urutan poin di seluruh teks (kunci foto/narasi), tetap berjalan walau ada subjudul.
+ * Aturan yang sama dipakai poinSolusi() di entry.php supaya foto cocok.
+ * @return array list of ['judul'=>bool, 'teks'=>string, 'no'=>?int, 'idx'=>?int]
  */
 function dsParsePoin(?string $teks): array {
     $baris = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', (string)$teks)), fn($b) => $b !== ''));
+    $re = '/^\(?\d{1,2}\)?[.\)\-:]\s*/';
     $ada = false;
-    foreach ($baris as $b) if (preg_match('/^\(?\d{1,2}\)?[.\)\-:]\s*/', $b)) { $ada = true; break; }
-    if (!$ada) return ['judul' => [], 'poin' => array_map('dsBuangNomor', $baris)];
+    foreach ($baris as $b) if (preg_match($re, $b)) { $ada = true; break; }
 
-    $judul = []; $poin = [];
+    $out = []; $no = 0; $idx = 0;
     foreach ($baris as $b) {
-        if (preg_match('/^\(?\d{1,2}\)?[.\)\-:]\s*/', $b)) $poin[] = dsBuangNomor($b);
-        elseif ($poin) $poin[count($poin) - 1] .= ' ' . $b;
-        else $judul[] = $b;
+        if (!$ada)                     $out[] = ['judul' => false, 'teks' => $b, 'no' => ++$no, 'idx' => ++$idx];
+        elseif (preg_match($re, $b))   $out[] = ['judul' => false, 'teks' => dsBuangNomor($b), 'no' => ++$no, 'idx' => ++$idx];
+        else { $no = 0;                $out[] = ['judul' => true,  'teks' => $b, 'no' => null, 'idx' => null]; }
     }
-    return ['judul' => $judul, 'poin' => $poin];
+    return $out;
 }
 
 /** Paragraf "Aktivitas yang dilakukan": narasi tiap RO + narasi uraian tingkat Kegiatan. Dipakai Word & tampilan cetak. */
@@ -204,12 +206,16 @@ function dsAktivitas(array $roList): string {
  * Label RO = narasi realisasi; nama RO hanya bila narasi kosong.
  * @return array list of [teks, foto[], utama(bool), indent_cm]
  */
-function dsSusunBukti(array $roList): array {
+function dsSusunBukti(array $roList, bool $tl = false): array {
     $tampil = [];
     foreach ($roList as $ro) {
         $narasiRo = trim((string)($ro['narasi'] ?? ''));
         $namaRo   = trim((string)($ro['nama_ro'] ?? ''));
         $label    = $narasiRo !== '' ? $narasiRo : $namaRo;
+        if ($tl) {   // Tindak Lanjut: subjudul (kegiatan) tebal, poin RTL di bawahnya menjorok
+            if ($label !== '') $tampil[] = [$label, $ro['foto'] ?? [], !empty($ro['judul']), empty($ro['judul']) ? 0.6 : 0];
+            continue;
+        }
         if ($label !== '') $tampil[] = ['• ' . $label, $ro['foto'] ?? [], true, 0];
         foreach (($ro['uraian'] ?? []) as $u) {
             $t = trim((string)($u['narasi'] ?? ''));
@@ -327,21 +333,36 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
         dsSisip($doc, $sectPr, dsP('Triwulan ' . ($data['triwulan'] ?? '') . ' ' . ($data['tahun'] ?? ''), ['bold' => true, 'size' => 14, 'align' => 'center', 'space_after' => 8]));
         dsSisip($doc, $sectPr, dsP(trim(($data['kode'] ?? '') . ' ' . ($data['nama'] ?? '')), ['bold' => true, 'size' => 12, 'align' => 'center', 'space_after' => 12]));
 
-        $kendalaS = dsParsePoin($data['kendala'] ?? '');
-        $solusiS  = dsParsePoin($data['solusi'] ?? '');
+        $kosong = [['judul' => false, 'teks' => '-', 'no' => null, 'idx' => null]];
+        $kendalaS = dsParsePoin($data['kendala'] ?? '') ?: $kosong;
+        $solusiS  = dsParsePoin($data['solusi'] ?? '') ?: $kosong;
 
         dsSisip($doc, $sectPr, dsP('Masalah :', ['bold' => true, 'size' => 11, 'space_after' => 2]));
-        foreach ($kendalaS['judul'] as $j) dsSisip($doc, $sectPr, dsP($j, ['bold' => true, 'size' => 11, 'space_after' => 2]));
-        foreach ($kendalaS['poin'] ?: ['-'] as $i => $k) {
-            dsSisip($doc, $sectPr, dsP(($kendalaS['poin'] ? ($i + 1) . '. ' : '') . $k, ['size' => 11, 'align' => 'both', 'space_after' => 2]));
+        foreach ($kendalaS as $it) {
+            dsSisip($doc, $sectPr, $it['judul']
+                ? dsP($it['teks'], ['bold' => true, 'size' => 11, 'space_before' => 3, 'space_after' => 2])
+                : dsP(($it['no'] ? $it['no'] . '. ' : '') . $it['teks'], ['size' => 11, 'align' => 'both', 'space_after' => 2]));
         }
         dsSisip($doc, $sectPr, dsP('', ['space_after' => 6]));
 
         dsSisip($doc, $sectPr, dsP('Solusi :', ['bold' => true, 'size' => 11, 'space_after' => 2]));
-        foreach ($solusiS['judul'] as $j) dsSisip($doc, $sectPr, dsP($j, ['bold' => true, 'size' => 11, 'space_after' => 2]));
-        foreach ($solusiS['poin'] ?: ['-'] as $i => $sl) {
-            dsSisip($doc, $sectPr, dsP(($solusiS['poin'] ? ($i + 1) . '. ' : '') . $sl, ['size' => 11, 'align' => 'both', 'space_after' => 4]));
-            $pasangFoto($data['solusi_foto'][$i + 1] ?? []);
+        foreach ($solusiS as $it) {
+            if ($it['judul']) { dsSisip($doc, $sectPr, dsP($it['teks'], ['bold' => true, 'size' => 11, 'space_before' => 3, 'space_after' => 2])); continue; }
+            dsSisip($doc, $sectPr, dsP(($it['no'] ? $it['no'] . '. ' : '') . $it['teks'], ['size' => 11, 'align' => 'both', 'space_after' => 4]));
+            if ($it['idx']) $pasangFoto($data['solusi_foto'][$it['idx']] ?? []);
+        }
+        goto selesai;
+    }
+
+    // ── Dokumen Tindak Lanjut TW sebelumnya: hanya judul, indikator, poin RTL beserta dokumentasinya ──
+    if (!empty($data['mode_tl'])) {
+        dsSisip($doc, $sectPr, dsP('Bukti Dokumen Sumber Tindak Lanjut TW ' . ($data['triwulan'] ?? '') . ' ' . ($data['tahun'] ?? ''), ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 2]));
+        dsSisip($doc, $sectPr, dsP((string)($data['satker'] ?? ''), ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 8]));
+        dsSisip($doc, $sectPr, dsP(trim(($data['kode'] ?? '') . ' ' . ($data['nama'] ?? '')), ['bold' => true, 'size' => 12, 'align' => 'center', 'space_after' => 12]));
+        foreach (dsSusunBukti($data['ro_list'] ?? [], true) as [$teks, $foto, $judul, $indent]) {
+            if ($judul) dsSisip($doc, $sectPr, dsP($teks, ['bold' => true, 'size' => 11, 'space_before' => 4, 'space_after' => 4]));
+            else { $roTerisi++; dsSisip($doc, $sectPr, dsP($teks, ['space_after' => 6, 'indent_cm' => $indent])); }
+            $pasangFoto($foto);
         }
         goto selesai;
     }
@@ -421,22 +442,15 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
     dsSisip($doc, $sectPr, dsP('Aktivitas yang dilakukan', ['bold' => true, 'space_after' => 2]));
     dsSisip($doc, $sectPr, dsP(dsAktivitas($roList), ['align' => 'both', 'space_after' => 10]));
 
-    // ── Kendala ──
-    $kendalaList = dsBacaList($data['kendala'] ?? '');
-    if ($kendalaList) {
-        dsSisip($doc, $sectPr, dsP('Kendala :', ['bold' => true, 'space_after' => 2]));
-        foreach ($kendalaList as $i => $k) {
-            dsSisip($doc, $sectPr, dsP(($i + 1) . '. ' . $k, ['align' => 'both', 'space_after' => 2]));
-        }
-        dsSisip($doc, $sectPr, dsP('', ['space_after' => 4]));
-    }
-
-    // ── Solusi ──
-    $solusiList = dsBacaList($data['solusi'] ?? '');
-    if ($solusiList) {
-        dsSisip($doc, $sectPr, dsP('Solusi :', ['bold' => true, 'space_after' => 2]));
-        foreach ($solusiList as $i => $s) {
-            dsSisip($doc, $sectPr, dsP(($i + 1) . '. ' . $s, ['align' => 'both', 'space_after' => 2]));
+    // ── Kendala & Solusi (baris tanpa nomor = subjudul kegiatan) ──
+    foreach (['Kendala' => 'kendala', 'Solusi' => 'solusi'] as $label => $kunci) {
+        $items = dsParsePoin($data[$kunci] ?? '');
+        if (!$items) continue;
+        dsSisip($doc, $sectPr, dsP($label . ' :', ['bold' => true, 'space_after' => 2]));
+        foreach ($items as $it) {
+            dsSisip($doc, $sectPr, $it['judul']
+                ? dsP($it['teks'], ['bold' => true, 'space_before' => 3, 'space_after' => 2])
+                : dsP($it['no'] . '. ' . $it['teks'], ['align' => 'both', 'space_after' => 2]));
         }
         dsSisip($doc, $sectPr, dsP('', ['space_after' => 4]));
     }

@@ -617,9 +617,11 @@ case 'generate_dokumen_sumber':
         $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999 AND -1");
         $stmt->execute([$pid, $kode]);
         $narasi_poin = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-        foreach (dsBacaList($r['rtl']) as $i => $poin) {
-            $tambahan = trim((string)($narasi_poin[-($i + 1)] ?? ''));
-            $ro_list[] = ['nama_ro' => '', 'narasi' => $poin . ($tambahan !== '' ? ': ' . $tambahan : ''), 'foto' => $foto_poin[$i + 1] ?? []];
+        // Baris RTL tanpa nomor = subjudul (kegiatan); foto/narasi terikat urutan poin bernomor (idx)
+        foreach (dsParsePoin($r['rtl']) as $it) {
+            if ($it['judul']) { $ro_list[] = ['nama_ro' => '', 'narasi' => $it['teks'], 'foto' => [], 'judul' => true]; continue; }
+            $tambahan = trim((string)($narasi_poin[-$it['idx']] ?? ''));
+            $ro_list[] = ['nama_ro' => '', 'narasi' => $it['no'] . '. ' . $it['teks'] . ($tambahan !== '' ? ': ' . $tambahan : ''), 'foto' => $foto_poin[$it['idx']] ?? []];
         }
     }
     // Uraian kegiatan per RO (manual, opsional): Kegiatan → Sub Kegiatan → Tahapan (ck_uraian_node).
@@ -691,6 +693,8 @@ case 'generate_dokumen_sumber':
         'batas'        => $batas,
         'ro_list'      => $ro_list,
     ];
+
+    if (($_GET['mode'] ?? '') === 'tl') $payload['mode_tl'] = true;
 
     // jenis=solusi: dokumen terpisah "Bukti Dokumen Sumber Solusi Dari Kendala".
     // Foto per poin solusi disimpan dengan ro_master_id = -(20000000 + nomor poin).

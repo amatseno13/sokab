@@ -7,6 +7,7 @@
 session_start();
 require_once __DIR__ . '/../../includes/check_session.php';
 require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/docx_dokumen_sumber.php';   // dsParsePoin(): aturan poin/subjudul yang sama dengan dokumen
 requireLogin();
 
 $db         = getDBConnection();
@@ -539,13 +540,11 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
         </div>
 
         <?php
-        // Satu baris RTL = satu poin. Foto disimpan di ck_ro_bukti_foto dengan
-        // ro_master_id = -(nomor poin) — id negatif tidak bentrok dengan id RO.
+        // Poin RTL = baris bernomor; baris tanpa nomor = subjudul (kegiatan). Aturan sama dengan dokumen (dsParsePoin).
+        // Foto disimpan di ck_ro_bukti_foto dengan ro_master_id = -(urutan poin) — id negatif tidak bentrok dengan id RO.
         // ponytail: mengubah urutan RTL di TW lalu menggeser foto; pindah ke tabel poin kalau perlu.
-        $poin_sblm = array_values(array_filter(array_map(
-            fn($l) => trim(preg_replace('/^\(?\d{1,2}\)?[.\)\-:]\s*/', '', trim($l))),
-            preg_split('/\R/', (string)($entry_sblm['rtl'] ?? ''))
-        ), fn($l) => $l !== ''));
+        $items_sblm = dsParsePoin($entry_sblm['rtl'] ?? '');
+        $poin_sblm  = array_values(array_filter($items_sblm, fn($it) => !$it['judul']));
         // Narasi tambahan (opsional) per poin: ck_entry_ro dengan ro_master_id negatif yang sama.
         $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999 AND -1");
         $stmt->execute([$periode_sblm['id'], $kode]);
@@ -560,9 +559,12 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($poin_sblm as $i => $poin): $pid_poin = -($i + 1); ?>
+                <?php foreach ($items_sblm as $it): ?>
+                <?php if ($it['judul']): ?>
+                <tr><td colspan="2" style="background:#f3ece2;font-weight:700"><?= htmlspecialchars($it['teks']) ?></td></tr>
+                <?php continue; endif; $pid_poin = -$it['idx']; ?>
                 <tr data-ro-id="<?= $pid_poin ?>">
-                    <td><div class="ro-narasi-baca"><?= ($i + 1) ?>. <?= htmlspecialchars($poin) ?></div>
+                    <td><div class="ro-narasi-baca"><?= $it['no'] ?>. <?= htmlspecialchars($it['teks']) ?></div>
                         <textarea class="ro-narasi ro-narasi-tl" rows="3" placeholder="Narasi tindak lanjut (opsional)..."
                             data-awal="<?= htmlspecialchars($narasi_poin[$pid_poin] ?? '') ?>"
                             oninput="markDirty()"><?= htmlspecialchars($narasi_poin[$pid_poin] ?? '') ?></textarea></td>
@@ -743,11 +745,12 @@ async function simpanSemua() {
     }
 }
 
-function showToast(msg, ok) {
+function showToast(msg, ok, ms = 3000) {
     const t = document.getElementById('toast');
     t.textContent = msg;
     t.className = 'toast show ' + (ok ? 'ok' : 'err');
-    setTimeout(() => t.classList.remove('show'), 3000);
+    clearTimeout(showToast.timer);
+    showToast.timer = setTimeout(() => t.classList.remove('show'), ms);
 }
 
 // Warn sebelum meninggalkan halaman jika ada perubahan belum disimpan
@@ -1057,17 +1060,19 @@ document.querySelectorAll('.node-root').forEach(r => renumber(r.id.replace('node
 // Poin = baris textarea solusi (nomor manual dibuang). Foto: ro_master_id = -(20000000 + nomor poin).
 // ponytail: foto terikat nomor poin; mengubah urutan baris menggeser fotonya.
 const poinSolusi = () => {
-    // Sama dengan dsParsePoin() di PHP: ada baris bernomor → hanya itu poin (tanpa nomor sebelum poin pertama = judul,
-    // sesudahnya = lanjutan poin di atasnya); tanpa nomor sama sekali → tiap baris satu poin.
+    // Sama dengan dsParsePoin() di PHP: ada baris bernomor → bernomor = poin, TANPA nomor = subjudul (kegiatan)
+    // yang menempel di poin berikutnya; nomor tampilan mulai 1 lagi di bawah tiap subjudul, 'idx' = kunci foto.
+    // Tanpa nomor sama sekali → tiap baris satu poin.
     const re = /^\(?\d{1,2}\)?[.)\-:]\s*/;
     const baris = document.getElementById('solusi').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    if (!baris.some(b => re.test(b))) return baris;
-    const poin = [];
+    const ada = baris.some(b => re.test(b));
+    const out = []; let no = 0, idx = 0, judul = '';
     baris.forEach(b => {
-        if (re.test(b)) poin.push(b.replace(re, ''));
-        else if (poin.length) poin[poin.length - 1] += ' ' + b;
+        if (!ada) out.push({teks: b, no: ++no, idx: ++idx, judul: ''});
+        else if (re.test(b)) { out.push({teks: b.replace(re, ''), no: ++no, idx: ++idx, judul}); judul = ''; }
+        else { no = 0; judul = judul ? judul + ' / ' + b : b; }
     });
-    return poin;
+    return out;
 };
 let siapFotoSolusi = false;
 
@@ -1075,13 +1080,14 @@ function renderSolusiBukti() {
     const wadah = document.getElementById('solusi-bukti');
     const pts = poinSolusi();
     document.getElementById('solusi-bukti-kosong').style.display = pts.length ? 'none' : '';
-    pts.forEach((teks, i) => {
-        const n = i + 1, key = -(20000000 + n);
+    pts.forEach(pt => {
+        const n = pt.idx, key = -(20000000 + n);
         let el = wadah.querySelector(`.solusi-item[data-n="${n}"]`);
         if (!el) {
             wadah.insertAdjacentHTML('beforeend', `<div class="solusi-item" data-n="${n}" data-ro-id="${key}"
                     style="display:grid;grid-template-columns:1fr 260px;gap:.7rem;margin-bottom:.5rem;padding:.5rem .6rem;background:#fff;border:1px solid var(--line, #e5ded3);border-radius:8px;align-items:start">
-                <div class="solusi-teks" style="font-size:.84rem"></div>
+                <div><div class="solusi-judul" style="font-weight:700;font-size:.8rem;margin-bottom:.2rem"></div>
+                <div class="solusi-teks" style="font-size:.84rem"></div></div>
                 <div>
                     <div class="foto-galeri" id="foto-galeri-${PERIODE_ID}-${key}"></div>
                     <button type="button" class="btn-foto" onclick="pilihFoto(${key}, ${PERIODE_ID})">📷 Tambah Foto</button>
@@ -1091,7 +1097,9 @@ function renderSolusiBukti() {
             el = wadah.lastElementChild;
             if (siapFotoSolusi) muatFotoUntukPeriode(PERIODE_ID, `.solusi-item[data-n="${n}"]`);
         }
-        el.querySelector('.solusi-teks').textContent = `${n}. ${teks}`;
+        el.querySelector('.solusi-teks').textContent = `${pt.no}. ${pt.teks}`;
+        const j = el.querySelector('.solusi-judul');
+        j.textContent = pt.judul; j.style.display = pt.judul ? '' : 'none';
     });
     wadah.querySelectorAll('.solusi-item').forEach(el => { if (+el.dataset.n > pts.length) el.remove(); });
 }
@@ -1115,7 +1123,16 @@ async function unggahFoto(inputEl) {
     const periodeId = inputEl.dataset.periodeId;
     const galeri = document.getElementById(`foto-galeri-${periodeId}-${roId}`);
 
+    // Maksimal 10 foto / 10 PDF per butir (server juga memeriksa)
+    const adaPdf = inputEl.hasAttribute('data-pdf');
+    let tersisa = 10 - [...galeri.querySelectorAll('.foto-thumb')].filter(t => !!t.querySelector('a') === adaPdf).length;
+    if (files.length > tersisa) showToast(`Maksimal 10 ${adaPdf ? 'PDF' : 'foto'} per butir — hanya ${Math.max(tersisa, 0)} lagi yang diunggah`, false);
+
+    const total = Math.min(files.length, Math.max(tersisa, 0));
+    let berhasil = 0;
+    const gagal = [];
     for (const file of files) {
+        if (tersisa-- <= 0) break;
         const pdf = inputEl.hasAttribute('data-pdf');
         if (!(pdf ? ['application/pdf'] : ['image/png', 'image/jpeg']).includes(file.type)) {
             showToast(`${file.name}: ${pdf ? 'hanya PDF' : 'hanya PNG/JPG'} yang diterima`, false);
@@ -1134,16 +1151,26 @@ async function unggahFoto(inputEl) {
         fd.append('file', file);
 
         try {
-            const r = await fetch(`${API}?action=foto_upload`, { method: 'POST', body: fd }).then(r => r.json());
+            // Batas 90 dtk per file: request yang menggantung tidak boleh membuat thumbnail "mengunggah" selamanya
+            const ctl = new AbortController();
+            const batas = setTimeout(() => ctl.abort(), 90000);
+            const res = await fetch(`${API}?action=foto_upload`, { method: 'POST', body: fd, signal: ctl.signal }).finally(() => clearTimeout(batas));
+            const teks = await res.text();
+            let r;
+            try { r = JSON.parse(teks); } catch (_) { throw new Error(`server membalas HTTP ${res.status} (bukan JSON)`); }
             if (!r.success) throw new Error(r.message || 'Gagal upload');
             placeholder.dataset.fotoId = r.id;
             placeholder.classList.remove('uploading');
             placeholder.innerHTML += `<button class="hapus" title="Hapus foto" onclick="hapusFoto(${r.id}, ${roId}, ${periodeId})">✕</button>`;
+            berhasil++;
         } catch (e) {
             placeholder.remove();
-            showToast(`Gagal upload ${file.name}: ${e.message}`, false);
+            gagal.push(`${file.name} (${e.name === 'AbortError' ? 'waktu habis' : e.message})`);
         }
     }
+    // Ringkasan di akhir, supaya kegagalan di tengah tidak tertimpa pesan berikutnya
+    if (gagal.length) showToast(`Berhasil ${berhasil} dari ${total}. Gagal: ${gagal.join('; ')}`, false, 12000);
+    else if (total > 1) showToast(`${berhasil} file berhasil diunggah`, true);
     inputEl.value = '';
 }
 
