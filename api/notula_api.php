@@ -380,6 +380,19 @@ case 'generate_db':
         $ro_map[$r['iku_kode']][] = $teks;
     }
 
+    // Uraian kegiatan (Kegiatan/Sub/Tahapan): narasi RO boleh kosong asal kegiatannya sudah ada.
+    // Narasi tingkat Kegiatan ikut ke narasi IKU (sama seperti "Aktivitas yang dilakukan" di dokumen sumber).
+    // Tabel mungkin belum ada (sql/ck_uraian_node.sql) → dilewati.
+    $ada_uraian = [];
+    try {
+        $stmt = $db->prepare("SELECT iku_kode, tipe, narasi FROM ck_uraian_node WHERE periode_id = :pid ORDER BY ro_master_id, urutan, id");
+        $stmt->execute([':pid' => $pid]);
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $u) {
+            $ada_uraian[$u['iku_kode']] = true;
+            if ($u['tipe'] === 'kegiatan' && trim((string)$u['narasi']) !== '') $ro_map[$u['iku_kode']][] = trim($u['narasi']);
+        }
+    } catch (PDOException $e) { /* tabel belum ada */ }
+
     $fmt = function ($v) {
         if ($v === null || $v === '') return '';
         $s = number_format((float)$v, 2, '.', '');
@@ -414,7 +427,7 @@ case 'generate_db':
             $batas = date('j', $ts) . ' ' . $bln[(int)date('n', $ts)] . ' ' . date('Y', $ts);
         }
 
-        if ($realisasi !== null || trim((string)$r['kendala']) !== '') $terisi++;
+        if ($realisasi !== null || trim((string)$r['kendala'] . (string)$r['solusi'] . (string)$r['rtl']) !== '' || isset($ro_map[$r['kode']]) || isset($ada_uraian[$r['kode']])) $terisi++;
 
         $iku_list[] = [
             'kode'         => $r['kode'],
@@ -436,6 +449,7 @@ case 'generate_db':
             'link_bukti'   => (string)$r['link_bukti'],
             'link_tl_sblm' => (string)$r['link_tl'],
             'ro_narasi'    => isset($ro_map[$r['kode']]) ? implode(' ', $ro_map[$r['kode']]) : '',
+            'ada_uraian'   => isset($ada_uraian[$r['kode']]),
         ];
     }
 

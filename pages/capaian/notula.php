@@ -10,21 +10,30 @@ require_once __DIR__ . '/../../config/database.php';
 requireLogin();
 
 $db = getDBConnection();
-$periodes = $db->query("SELECT * FROM ck_periode ORDER BY tahun DESC, FIELD(triwulan,'I','II','III','IV')")
+$periodes = $db->query("SELECT p.*, (SELECT COUNT(*) FROM ck_entry_iku e WHERE e.periode_id = p.id) AS n_entry
+                        FROM ck_periode p ORDER BY p.tahun DESC, FIELD(p.triwulan,'I','II','III','IV')")
                ->fetchAll(PDO::FETCH_ASSOC);
 
 // Kelompokkan per tahun untuk pemilih bertingkat pada mode Database
 $per_tahun = [];
 foreach ($periodes as $p) {
-    $per_tahun[(int)$p['tahun']][] = ['id' => (int)$p['id'], 'tw' => $p['triwulan'], 'status' => $p['status']];
+    $per_tahun[(int)$p['tahun']][] = ['id' => (int)$p['id'], 'tw' => $p['triwulan'], 'status' => $p['status'], 'n' => (int)$p['n_entry']];
 }
 krsort($per_tahun);
 $daftar_tahun = array_keys($per_tahun);
 $tahun_kini   = (int)date('Y');
 $tahun_awal   = in_array($tahun_kini, $daftar_tahun, true) ? $tahun_kini : ($daftar_tahun[0] ?? $tahun_kini);
 
+// Triwulan berjalan = triwulan 'open' TERAKHIR yang sudah ada isiannya pada tahun berjalan.
+// (Semua triwulan setahun bisa berstatus 'open'; mengambil yang pertama berarti selalu TW I.)
 $default_periode = null;
-foreach ($periodes as $p) { if ($p['status'] === 'open') { $default_periode = $p; break; } }
+foreach (array_reverse($periodes) as $p) {   // dari TW IV ke TW I
+    if ((int)$p['tahun'] === $tahun_awal && $p['status'] === 'open' && (int)$p['n_entry'] > 0) { $default_periode = $p; break; }
+}
+if (!$default_periode) foreach (array_reverse($periodes) as $p) {
+    if ((int)$p['tahun'] === $tahun_awal && $p['status'] === 'open') { $default_periode = $p; break; }
+}
+if (!$default_periode) foreach ($periodes as $p) { if ($p['status'] === 'open') { $default_periode = $p; break; } }
 if (!$default_periode && $periodes) $default_periode = $periodes[0];
 ?>
 <!DOCTYPE html>
@@ -451,7 +460,7 @@ function gantiFile() {
 // ── Preview tabel ──────────────────────────────────────
 function statusIKU(i) {
     const angka  = i.real_tw !== '' && i.real_tw !== null;
-    const narasi = (i.kendala || '').trim() !== '' || (i.rtl || '').trim() !== '';
+    const narasi = i.ada_uraian || ['kendala', 'solusi', 'rtl', 'ro_narasi'].some(k => (i[k] || '').trim() !== '');   // narasi RO boleh kosong asal kegiatannya ada
     return (angka && narasi) ? 'lengkap' : (angka || narasi) ? 'sebagian' : 'kosong';
 }
 
@@ -582,7 +591,9 @@ function isiPeriodeDB() {
     sel.innerHTML = daftar.map(t =>
         `<option value="${t.id}">Triwulan ${t.tw}${t.status === 'open' ? ' (aktif)' : ''}</option>`
     ).join('');
-    const aktif = daftar.find(t => t.status === 'open');
+    // Triwulan berjalan = 'open' terakhir yang sudah ada isiannya (bukan sekadar 'open' pertama = TW I)
+    const buka = [...daftar].reverse().filter(t => t.status === 'open');
+    const aktif = buka.find(t => t.n > 0) || buka[0];
     if (aktif) sel.value = aktif.id;
     sel.disabled = daftar.length === 0;
 }

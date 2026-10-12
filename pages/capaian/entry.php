@@ -1063,7 +1063,7 @@ const poinSolusi = () => {
     // Sama dengan dsParsePoin() di PHP: ada baris bernomor → bernomor = poin, TANPA nomor = subjudul (kegiatan)
     // yang menempel di poin berikutnya; nomor tampilan mulai 1 lagi di bawah tiap subjudul, 'idx' = kunci foto.
     // Tanpa nomor sama sekali → tiap baris satu poin.
-    const re = /^\(?\d{1,2}\)?[.)\-:]\s*/;
+    const re = /^(?:\(?\d{1,2}\)?[.)\-:]|[-•*])\s*/;   // nomor atau strip '-' = poin
     const baris = document.getElementById('solusi').value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     const ada = baris.some(b => re.test(b));
     const out = []; let no = 0, idx = 0, judul = '';

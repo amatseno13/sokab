@@ -152,7 +152,7 @@ function dsSisip(DOMDocument $doc, DOMNode $acuan, string $xml): void {
  * lagi di atasnya sehingga dobel, misal "2. 1. Pada hari pertama...".
  */
 function dsBuangNomor(string $baris): string {
-    return preg_replace('/^\(?\d{1,2}\)?[.\)\-:]\s*/', '', $baris);
+    return preg_replace('/^(?:\(?\d{1,2}\)?[.\)\-:]|[-•*])\s*/u', '', $baris);
 }
 
 function dsBacaList(?string $teks): array {
@@ -174,7 +174,7 @@ function dsBacaList(?string $teks): array {
  */
 function dsParsePoin(?string $teks): array {
     $baris = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', (string)$teks)), fn($b) => $b !== ''));
-    $re = '/^\(?\d{1,2}\)?[.\)\-:]\s*/';
+    $re = '/^(?:\(?\d{1,2}\)?[.\)\-:]|[-•*])\s*/u';   // penanda poin: nomor ("1.", "2)") atau strip "-" 
     $ada = false;
     foreach ($baris as $b) if (preg_match($re, $b)) { $ada = true; break; }
 
