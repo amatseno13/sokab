@@ -1,6 +1,10 @@
 // Dialog bergaya aplikasi:
 //   await konfirmasiHapus('judul', 'keterangan') → true/false
 //   await pilihFormat()                          → 'word' | 'pdf' | null (batal)
+// Posisi klik terakhir: dialog pilih format muncul di dekat tombol yang diklik, bukan di tengah layar
+let khKlik = null;
+document.addEventListener('click', e => { khKlik = {x: e.clientX, y: e.clientY}; }, true);
+
 function khStyle() {
     if (!document.getElementById('kh-style')) {
         document.head.insertAdjacentHTML('beforeend', `<style id="kh-style">
@@ -58,5 +62,13 @@ function pilihFormat() {
         el.onclick = e => { if (e.target === el) tutup(null); };
         document.addEventListener('keydown', tombol);
         document.body.appendChild(el);
+        const kotak = el.querySelector('.kh-box');
+        if (khKlik) {   // di dekat kursor, tetap di dalam layar
+            const r = kotak.getBoundingClientRect();
+            el.style.alignItems = el.style.justifyContent = 'flex-start';
+            kotak.style.position = 'absolute';
+            kotak.style.left = Math.max(8, Math.min(khKlik.x - r.width / 2, innerWidth - r.width - 8)) + 'px';
+            kotak.style.top  = Math.max(8, Math.min(khKlik.y + 12, innerHeight - r.height - 8)) + 'px';
+        }
     });
 }
