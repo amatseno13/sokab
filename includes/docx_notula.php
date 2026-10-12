@@ -178,13 +178,23 @@ function dxIsiSel(DOMDocument $doc, DOMElement $tc, string $teks): void {
     foreach (dxAnak($isi, 'r') as $r) $ps[0]->appendChild($r->cloneNode(true));
 }
 
-/** Sisipkan nilai tepat setelah paragraf yang memuat label tertentu. */
+/** Sisipkan teks setelah $acuan, satu paragraf per baris (urutan terjaga). */
+function dxSisipBaris(DOMDocument $doc, DOMElement $acuan, string $teks, bool $link = false): void {
+    foreach (preg_split('/\r\n|\r|\n/', $teks) as $baris) {
+        if (trim($baris) === '') continue;
+        $p = dxParaNilai($doc, trim($baris), $link);
+        dxSisipSetelah($acuan, $p);
+        $acuan = $p;
+    }
+}
+
+/** Sisipkan nilai tepat setelah paragraf yang memuat label tertentu (banyak baris = banyak paragraf). */
 function dxSisipSetelahLabel(DOMDocument $doc, DOMElement $tc, string $label,
                              string $nilai, bool $link = false): bool {
     if ($nilai === '') return false;
     foreach (dxParagraf($tc) as $p) {
         if (stripos(dxTeks($p), $label) !== false) {
-            dxSisipSetelah($p, dxParaNilai($doc, $nilai, $link));
+            dxSisipBaris($doc, $p, $nilai, $link);
             return true;
         }
     }
@@ -246,17 +256,18 @@ function dxBersihkan(?string $teks): string {
     if ($teks === '') return '';
     $baris = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $teks)), 'strlen'));
     if (!$baris) return $teks;
-    $hasil = $baris[0];
-
-    // Buang pengulangan kalimat yang sama persis di belakangnya
-    $kata = explode(' ', $hasil);
-    $n = intdiv(count($kata), 2);
-    for ($len = 1; $len <= $n; $len++) {
-        $potong = implode(' ', array_slice($kata, 0, $len));
-        $sisa = trim(substr($hasil, strlen($potong)));
-        if ($sisa !== '' && strpos($sisa, $potong) === 0) return $potong;
+    // Semua baris dipertahankan (satu baris = satu poin); hanya kalimat yang berulang persis dalam
+    // satu baris (artefak sel Excel yang digabung) yang dibuang.
+    foreach ($baris as &$b) {
+        $kata = explode(' ', $b);
+        for ($len = 1, $n = intdiv(count($kata), 2); $len <= $n; $len++) {
+            $potong = implode(' ', array_slice($kata, 0, $len));
+            $sisa = trim(substr($b, strlen($potong)));
+            if ($sisa !== '' && strpos($sisa, $potong) === 0) { $b = $potong; break; }
+        }
     }
-    return $hasil;
+    unset($b);
+    return implode("\n", $baris);
 }
 
 // ============================================================
@@ -614,9 +625,9 @@ function isiNotulaDocx(array $data, string $template, string $output): array {
                     foreach (dxParagraf($tc) as $p) {
                         $isi = trim(dxTeks($p));
                         if (strpos($isi, 'Kendala') === 0 && $nilai('kendala') !== '') {
-                            dxSisipSetelah($p, dxParaNilai($doc, dxBersihkan($nilai('kendala'))));
+                            dxSisipBaris($doc, $p, dxBersihkan($nilai('kendala')));
                         } elseif (strpos($isi, 'Solusi') === 0 && $nilai('solusi') !== '') {
-                            dxSisipSetelah($p, dxParaNilai($doc, dxBersihkan($nilai('solusi'))));
+                            dxSisipBaris($doc, $p, dxBersihkan($nilai('solusi')));
                         }
                     }
                 }

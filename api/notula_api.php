@@ -448,7 +448,7 @@ case 'generate_db':
             'batas'        => $batas,
             'link_bukti'   => (string)$r['link_bukti'],
             'link_tl_sblm' => (string)$r['link_tl'],
-            'ro_narasi'    => isset($ro_map[$r['kode']]) ? implode(' ', $ro_map[$r['kode']]) : '',
+            'ro_narasi'    => isset($ro_map[$r['kode']]) ? implode("\n", $ro_map[$r['kode']]) : '',   // satu RO/kegiatan = satu paragraf
             'ada_uraian'   => isset($ada_uraian[$r['kode']]),
         ];
     }
