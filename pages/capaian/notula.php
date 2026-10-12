@@ -279,6 +279,7 @@ tr:hover td{background:#fffaf5}
         </p>
         <div class="btn-row">
             <button class="btn btn-primary" id="btn-gen" onclick="generateNotula()">📄 Generate &amp; Unduh Notula (.docx)</button>
+            <button class="btn btn-ghost" id="btn-xlsx" onclick="exportKertasKerja()">📗 Export Kertas Kerja (.xlsx)</button>
             <span id="gen-status" style="font-size:.82rem;color:#aaa"></span>
         </div>
     </div>
@@ -707,6 +708,25 @@ async function generateNotula() {
         btn.disabled = false;
         setTimeout(() => st.textContent = '', 6000);
     }
+}
+
+async function exportKertasKerja() {
+    const pid = periodeIdAktif();
+    if (!pid) { toast('Pilih triwulan dulu.', false); return; }
+    const btn = document.getElementById('btn-xlsx');
+    btn.disabled = true;
+    try {
+        const res = await fetch(`../../api/export_kertas_kerja.php?action=export&periode_id=${pid}`);
+        if ((res.headers.get('Content-Type') || '').includes('application/json')) throw new Error((await res.json()).message || 'Gagal export');
+        const blob = await res.blob();
+        const nama = ((res.headers.get('Content-Disposition') || '').match(/filename="(.+?)"/) || [])[1] || 'Kertas_Kerja.xlsx';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = nama;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
+        toast('Kertas kerja terunduh: ' + nama);
+    } catch (e) { toast(e.message, false); }
+    finally { btn.disabled = false; }
 }
 
 // ── Dokumentasi rapat (foto di halaman terakhir notula) ──
