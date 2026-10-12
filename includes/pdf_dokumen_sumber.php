@@ -127,7 +127,7 @@ function buatDokumenSumberPdf(array $d, ?array &$info = null): string {
         $kendala = dsParsePoin($d['kendala'] ?? '') ?: $kosong;
         $solusi  = dsParsePoin($d['solusi'] ?? '') ?: $kosong;
 
-        $p->para('Masalah :', 11, true, 'L', 0, 1);
+        $p->para('Kendala :', 11, true, 'L', 0, 1);
         foreach ($kendala as $it) {
             if ($it['judul']) $p->para($it['teks'], 11, true, 'L', 0, 1);
             else $p->para(($it['no'] ? $it['no'] . '. ' : '') . $it['teks'], 11, false, 'J', 0, 1);

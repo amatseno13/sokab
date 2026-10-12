@@ -337,7 +337,7 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
         $kendalaS = dsParsePoin($data['kendala'] ?? '') ?: $kosong;
         $solusiS  = dsParsePoin($data['solusi'] ?? '') ?: $kosong;
 
-        dsSisip($doc, $sectPr, dsP('Masalah :', ['bold' => true, 'size' => 11, 'space_after' => 2]));
+        dsSisip($doc, $sectPr, dsP('Kendala :', ['bold' => true, 'size' => 11, 'space_after' => 2]));
         foreach ($kendalaS as $it) {
             dsSisip($doc, $sectPr, $it['judul']
                 ? dsP($it['teks'], ['bold' => true, 'size' => 11, 'space_before' => 3, 'space_after' => 2])
