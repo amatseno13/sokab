@@ -339,6 +339,10 @@ switch ($act) {
 
     // ── POST: upload satu foto bukti untuk satu RO ──
     case 'foto_upload':
+        // File lebih besar dari post_max_size → PHP mengosongkan $_POST dan $_FILES (tanpa error apa pun)
+        if (empty($_POST) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+            json_err('File terlalu besar untuk server (batas post_max_size ' . ini_get('post_max_size') . ', upload_max_filesize ' . ini_get('upload_max_filesize') . ')');
+        }
         $ro_master_id = (int)($_POST['ro_master_id'] ?? 0);
         $periode_id   = (int)($_POST['periode_id'] ?? 0);
         $keterangan   = trim($_POST['keterangan'] ?? '');
@@ -346,7 +350,7 @@ switch ($act) {
 
         if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
             $pesan = [
-                UPLOAD_ERR_INI_SIZE  => 'Ukuran file melebihi batas upload_max_filesize',
+                UPLOAD_ERR_INI_SIZE  => 'Ukuran file melebihi batas upload_max_filesize server (' . ini_get('upload_max_filesize') . ')',
                 UPLOAD_ERR_FORM_SIZE => 'Ukuran file terlalu besar',
                 UPLOAD_ERR_PARTIAL   => 'File hanya terkirim sebagian',
                 UPLOAD_ERR_NO_FILE   => 'Tidak ada file yang dipilih',
@@ -359,11 +363,17 @@ switch ($act) {
 
         $finfo = new finfo(FILEINFO_MIME_TYPE);
         $mime  = $finfo->file($f['tmp_name']);
-        $ext_by_mime = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'application/pdf' => 'pdf'];
-        if (!isset($ext_by_mime[$mime])) json_err('Hanya file PNG, JPG, atau PDF yang diizinkan');
+        $ext_by_mime = ['image/png' => 'png', 'image/jpeg' => 'jpg', 'application/pdf' => 'pdf', 'application/x-pdf' => 'pdf'];
+        // PDF dari sebagian aplikasi (scan, "cetak ke PDF") bisa terbaca finfo sebagai octet-stream/text:
+        // terima bila berakhiran .pdf dan memuat tanda %PDF- di 1 KB pertama.
+        if (!isset($ext_by_mime[$mime]) && preg_match('/\.pdf$/i', $f['name'])
+            && strpos((string)file_get_contents($f['tmp_name'], false, null, 0, 1024), '%PDF-') !== false) {
+            $mime = 'application/pdf';
+        }
+        if (!isset($ext_by_mime[$mime])) json_err('Hanya file PNG, JPG, atau PDF yang diizinkan (terbaca sebagai ' . $mime . ')');
 
         // Maksimal 10 foto dan 10 PDF per butir (RO / uraian / poin) per periode
-        $pdf = $mime === 'application/pdf';
+        $pdf = $ext_by_mime[$mime] === 'pdf';
         $sqlN = "SELECT COUNT(*) FROM ck_ro_bukti_foto WHERE ro_master_id = ? AND periode_id = ? AND file_path " . ($pdf ? '' : 'NOT ') . "LIKE '%.pdf'";
         $argN = [$ro_master_id, $periode_id];
         if ($ro_master_id < 0 && trim($_POST['iku_kode'] ?? '') !== '') { $sqlN .= ' AND iku_kode = ?'; $argN[] = trim($_POST['iku_kode']); }
@@ -391,8 +401,12 @@ switch ($act) {
             INSERT INTO ck_ro_bukti_foto (ro_master_id, periode_id, " . ($iku ? 'iku_kode, ' : '') . "file_path, original_name, keterangan, urutan, uploaded_by)
             VALUES (?, ?, " . ($iku ? '?, ' : '') . "?, ?, ?, ?, ?)
         ");
-        $stmt->execute(array_merge([$ro_master_id, $periode_id], $iku ? [$iku] : [],
-            [$file_path, $f['name'], $keterangan ?: null, $urutan, user_id()]));
+        // Nama file asli dipotong ke 255 (kolom varchar(255)): nama PDF laporan yang panjang membuat INSERT gagal
+        // dan file sudah terlanjur tersimpan di disk tanpa tercatat di database. Gagal INSERT → file dibuang lagi.
+        try {
+            $stmt->execute(array_merge([$ro_master_id, $periode_id], $iku ? [$iku] : [],
+                [$file_path, mb_substr($f['name'], 0, 255), $keterangan ? mb_substr($keterangan, 0, 255) : null, $urutan, user_id()]));
+        } catch (PDOException $e) { @unlink($dest); throw $e; }
 
         json_ok(['id' => (int)$db->lastInsertId(), 'file_path' => $file_path]);
 

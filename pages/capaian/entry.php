@@ -1139,7 +1139,7 @@ async function unggahFoto(inputEl) {
     for (const file of files) {
         if (tersisa-- <= 0) break;
         const pdf = inputEl.hasAttribute('data-pdf');
-        if (!(pdf ? ['application/pdf'] : ['image/png', 'image/jpeg']).includes(file.type)) {
+        if (!(pdf ? (['application/pdf', 'application/x-pdf'].includes(file.type) || (!file.type && /\.pdf$/i.test(file.name))) : ['image/png', 'image/jpeg'].includes(file.type))) {
             showToast(`${file.name}: ${pdf ? 'hanya PDF' : 'hanya PNG/JPG'} yang diterima`, false);
             continue;
         }
