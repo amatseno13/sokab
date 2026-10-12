@@ -372,14 +372,14 @@ switch ($act) {
         }
         if (!isset($ext_by_mime[$mime])) json_err('Hanya file PNG, JPG, atau PDF yang diizinkan (terbaca sebagai ' . $mime . ')');
 
-        // Maksimal 10 foto dan 10 PDF per butir (RO / uraian / poin) per periode
+        // Maksimal 20 foto dan 20 PDF per butir (RO / uraian / poin) per periode
         $pdf = $ext_by_mime[$mime] === 'pdf';
         $sqlN = "SELECT COUNT(*) FROM ck_ro_bukti_foto WHERE ro_master_id = ? AND periode_id = ? AND file_path " . ($pdf ? '' : 'NOT ') . "LIKE '%.pdf'";
         $argN = [$ro_master_id, $periode_id];
         if ($ro_master_id < 0 && trim($_POST['iku_kode'] ?? '') !== '') { $sqlN .= ' AND iku_kode = ?'; $argN[] = trim($_POST['iku_kode']); }
         $stmt = $db->prepare($sqlN);
         $stmt->execute($argN);
-        if ((int)$stmt->fetchColumn() >= 10) json_err('Maksimal 10 ' . ($pdf ? 'PDF' : 'foto') . ' per butir');
+        if ((int)$stmt->fetchColumn() >= 20) json_err('Maksimal 20 ' . ($pdf ? 'PDF' : 'foto') . ' per butir');
 
         $dir = __DIR__ . '/../uploads/bukti_ro/';
         if (!is_dir($dir)) @mkdir($dir, 0775, true);

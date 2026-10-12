@@ -234,13 +234,13 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
 .section-sblm .ro-table th{background:#f3ece2}
 
 /* ── Galeri Bukti Foto RO ── */
-.foto-galeri{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.6rem;min-height:2px}
-.foto-thumb{position:relative;width:60px;height:60px;border-radius:8px;overflow:hidden;border:1px solid var(--line);box-shadow:0 1px 3px rgba(15,23,42,.08);transition:.15s}
-.foto-thumb:hover{transform:scale(1.05);box-shadow:0 4px 10px rgba(15,23,42,.18)}
-.foto-thumb img{width:100%;height:100%;object-fit:cover;display:block;cursor:pointer}
-.foto-thumb .hapus{position:absolute;top:0;right:0;background:rgba(15,23,42,.65);color:#fff;border:none;width:18px;height:18px;font-size:.68rem;line-height:18px;cursor:pointer;border-radius:0 0 0 8px}
-.foto-thumb .hapus:hover{background:var(--err)}
-.foto-thumb.uploading img{opacity:.4}
+.foto-galeri{display:flex;flex-direction:column;gap:.2rem;margin-bottom:.5rem;min-height:2px}
+.foto-baris{display:flex;align-items:center;gap:.5rem;padding:.2rem .5rem;border:1px solid var(--line);border-radius:6px;background:var(--paper);font-size:.76rem}
+.foto-baris a{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-soft);text-decoration:none}
+.foto-baris a:hover{color:var(--brand-dark);text-decoration:underline}
+.foto-baris .hapus{flex:none;background:none;border:none;color:var(--ink-faint);cursor:pointer;font-size:.8rem;line-height:1;padding:.1rem .25rem}
+.foto-baris .hapus:hover{color:var(--err)}
+.foto-baris.uploading{opacity:.5}
 .btn-foto{background:var(--paper);border:1.5px dashed #cbd0d8;border-radius:var(--radius-sm);padding:.4rem .7rem;font-size:.76rem;color:var(--ink-soft);cursor:pointer;font-family:inherit;font-weight:600;transition:.15s}
 .btn-foto:hover{border-color:var(--brand);color:var(--brand-dark);background:var(--brand-tint)}
 </style>
@@ -943,12 +943,9 @@ function renderGaleriFoto(periodeId, roId, daftar) {
     const el = document.getElementById(`foto-galeri-${periodeId}-${roId}`);
     if (!el) return;
     el.innerHTML = (daftar || []).map(f => `
-        <div class="foto-thumb" data-foto-id="${f.id}">
-            ${/\.pdf$/i.test(f.file_path)
-                ? `<a href="../../${f.file_path}" target="_blank" style="font-size:.7rem;padding:.3rem;word-break:break-all">📄 ${esc(f.original_name || 'laporan.pdf')}</a>`
-                : `<img src="../../${f.file_path}" onclick="window.open('../../${f.file_path}','_blank')"
-                 alt="${(f.keterangan || f.original_name || '').replace(/"/g,'')}">`}
-            <button class="hapus" title="Hapus foto" onclick="hapusFoto(${f.id}, ${roId}, ${periodeId})">✕</button>
+        <div class="foto-baris" data-foto-id="${f.id}" data-pdf="${/\.pdf$/i.test(f.file_path) ? 1 : 0}">
+            <a href="../../${f.file_path}" target="_blank" title="${esc(f.original_name || '')}">${esc(f.original_name || f.file_path.split('/').pop())}</a>
+            <button class="hapus" title="Hapus" onclick="hapusFoto(${f.id}, ${roId}, ${periodeId})">✕</button>
         </div>`).join('');
 }
 
@@ -1128,10 +1125,10 @@ async function unggahFoto(inputEl) {
     const periodeId = inputEl.dataset.periodeId;
     const galeri = document.getElementById(`foto-galeri-${periodeId}-${roId}`);
 
-    // Maksimal 10 foto / 10 PDF per butir (server juga memeriksa)
+    // Maksimal 20 foto / 20 PDF per butir (server juga memeriksa)
     const adaPdf = inputEl.hasAttribute('data-pdf');
-    let tersisa = 10 - [...galeri.querySelectorAll('.foto-thumb')].filter(t => !!t.querySelector('a') === adaPdf).length;
-    if (files.length > tersisa) showToast(`Maksimal 10 ${adaPdf ? 'PDF' : 'foto'} per butir — hanya ${Math.max(tersisa, 0)} lagi yang diunggah`, false);
+    let tersisa = 20 - [...galeri.querySelectorAll('.foto-baris')].filter(t => (t.dataset.pdf === '1') === adaPdf).length;
+    if (files.length > tersisa) showToast(`Maksimal 20 ${adaPdf ? 'PDF' : 'foto'} per butir — hanya ${Math.max(tersisa, 0)} lagi yang diunggah`, false);
 
     const total = Math.min(files.length, Math.max(tersisa, 0));
     let berhasil = 0;
@@ -1144,9 +1141,9 @@ async function unggahFoto(inputEl) {
             continue;
         }
         const placeholder = document.createElement('div');
-        placeholder.className = 'foto-thumb uploading';
-        placeholder.innerHTML = pdf ? `<a style="font-size:.7rem;padding:.3rem">📄 ${esc(file.name)}</a>`
-                                    : '<img src="' + URL.createObjectURL(file) + '">';
+        placeholder.className = 'foto-baris uploading';
+        placeholder.dataset.pdf = pdf ? 1 : 0;
+        placeholder.innerHTML = `<a>${esc(file.name)} — mengunggah…</a>`;
         galeri.appendChild(placeholder);
 
         const fd = new FormData();
@@ -1166,7 +1163,9 @@ async function unggahFoto(inputEl) {
             if (!r.success) throw new Error(r.message || 'Gagal upload');
             placeholder.dataset.fotoId = r.id;
             placeholder.classList.remove('uploading');
-            placeholder.innerHTML += `<button class="hapus" title="Hapus foto" onclick="hapusFoto(${r.id}, ${roId}, ${periodeId})">✕</button>`;
+            const a = placeholder.querySelector('a');
+            a.href = `../../${r.file_path}`; a.target = '_blank'; a.textContent = file.name;
+            placeholder.insertAdjacentHTML('beforeend', `<button class="hapus" title="Hapus" onclick="hapusFoto(${r.id}, ${roId}, ${periodeId})">✕</button>`);
             berhasil++;
         } catch (e) {
             placeholder.remove();
