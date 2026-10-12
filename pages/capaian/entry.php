@@ -180,6 +180,9 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
 .ro-table tr:hover td{background:#fbfbfc}
 .ro-table input,.ro-table textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:.45rem .65rem;font-size:.85rem;font-family:inherit}
 .ro-table textarea{min-height:70px;resize:vertical}
+.ro-table-real .ro-nama{font-size:.78rem;line-height:1.35}
+.ro-table-real textarea.ro-narasi{min-height:170px}
+.ro-table-real input{padding:.4rem .4rem}
 .ro-table input:focus,.ro-table textarea:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-tint)}
 .ro-nama{font-size:.82rem;color:var(--ink);font-weight:600;line-height:1.45}
 .ro-narasi-baca{font-size:.82rem;color:var(--ink-soft);line-height:1.55;font-style:italic}
@@ -451,14 +454,14 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
         <div class="section-title">📋 Bagian 3 — Rincian Output (Sub-sheet <?= htmlspecialchars($kode) ?>)</div>
 
         <?php if (count($ros) > 0): ?>
-        <table class="ro-table">
+        <table class="ro-table ro-table-real">
             <thead>
                 <tr>
-                    <th style="width:38%">Rincian Output</th>
-                    <th style="width:12%">Realisasi Vol</th>
-                    <th style="width:14%">Progres (%)</th>
+                    <th style="width:22%">Rincian Output</th>
+                    <th style="width:8%">Realisasi Vol</th>
+                    <th style="width:9%">Progres (%)</th>
                     <th>Narasi Realisasi</th>
-                    <th style="width:16%">Bukti Foto</th>
+                    <th style="width:22%">Bukti Foto</th>
                 </tr>
             </thead>
             <tbody>
@@ -479,7 +482,7 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
                         </div>
                     </td>
                     <td>
-                        <textarea class="ro-narasi" rows="3"
+                        <textarea class="ro-narasi" rows="8"
                             placeholder="Uraikan realisasi kegiatan ini..."
                             oninput="markDirty()"><?= htmlspecialchars($ro['narasi'] ?? '') ?></textarea>
                     </td>
