@@ -472,7 +472,18 @@ function isiNotulaDocx(array $data, string $template, string $output): array {
         'Triwulan XX Tahun 2026' => "Triwulan $tw Tahun $tahun",
         'Triwulan XX'            => "Triwulan $tw",
         'triwulan xx tahun 2026' => "triwulan $kata tahun $tahun",
+        // Template contoh berasal dari TW I: teks "Triwulan I" yang tertulis mati ikut diganti
+        'Monitoring Kinerja Triwulan I Tahun 2026' => "Monitoring Kinerja Triwulan $tw Tahun $tahun",
+        'Capaian Kinerja Triwulan I Tahun 2026'    => "Capaian Kinerja Triwulan $tw Tahun $tahun",
+        'triwulan pertama tahun 2026'              => "triwulan $kata tahun $tahun",
     ]);
+    // Sel/paragraf yang isinya persis "Triwulan I", "Target s.d Triwulan I", "Realisasi s.d Triwulan I"
+    // (dicocokkan utuh supaya "Triwulan IV" di teks contoh tidak ikut rusak)
+    foreach ($doc->getElementsByTagNameNS(W_NS, 'p') as $p) {
+        if (preg_match('/^(Target s\.d |Realisasi s\.d )?Triwulan I$/', trim(dxTeks($p)), $m)) {
+            dxGantiTeksParagraf($p, trim(dxTeks($p)), ($m[1] ?? '') . "Triwulan $tw");
+        }
+    }
 
     dxPerbaikiJudulSatker($doc, $satker);
 
