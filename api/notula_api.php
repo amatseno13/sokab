@@ -628,13 +628,17 @@ case 'generate_dokumen_sumber':
             ];
         }
         $ros = [];
-        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999 AND -1");
+        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999999 AND -1");
         $stmt->execute([$pid, $kode]);
         $narasi_poin = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        // Kunci narasi per IKU = -(row_order*1000 + poin); kunci lama (-poin) cadangan (lihat entry.php)
+        $stmt = $db->prepare("SELECT row_order FROM ck_iku_master WHERE kode = ?");
+        $stmt->execute([$kode]);
+        $kunci_iku = (int)$stmt->fetchColumn() * 1000;
         // Baris RTL tanpa nomor = subjudul (kegiatan); foto/narasi terikat urutan poin bernomor (idx)
         foreach (dsParsePoin($r['rtl']) as $it) {
             if ($it['judul']) { $ro_list[] = ['nama_ro' => '', 'narasi' => $it['teks'], 'foto' => [], 'judul' => true]; continue; }
-            $tambahan = trim((string)($narasi_poin[-$it['idx']] ?? ''));
+            $tambahan = trim((string)($narasi_poin[-$it['idx'] - $kunci_iku] ?? $narasi_poin[-$it['idx']] ?? ''));
             $ro_list[] = ['nama_ro' => '', 'narasi' => $it['no'] . '. ' . $it['teks'] . ($tambahan !== '' ? ': ' . $tambahan : ''), 'foto' => $foto_poin[$it['idx']] ?? []];
         }
     }

@@ -546,9 +546,13 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
         $items_sblm = dsParsePoin($entry_sblm['rtl'] ?? '');
         $poin_sblm  = array_values(array_filter($items_sblm, fn($it) => !$it['judul']));
         // Narasi tambahan (opsional) per poin: ck_entry_ro dengan ro_master_id negatif yang sama.
-        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999 AND -1");
+        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999999 AND -1");
         $stmt->execute([$periode_sblm['id'], $kode]);
         $narasi_poin = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        // Kunci narasi harus unik per IKU: ck_entry_ro unik di (periode, ro_master_id) TANPA iku_kode, jadi
+        // "-nomor poin" saja bertabrakan antar IKU (IKU lain menimpa / baris milik IKU lain tak terbaca).
+        // Kunci baru = -(urutan IKU*1000 + nomor poin); kunci lama (-nomor poin) hanya dibaca sebagai cadangan.
+        $kunci_iku = (int)$master['row_order'] * 1000;
         ?>
         <?php if (count($poin_sblm) > 0): ?>
         <table class="ro-table ro-table-sblm">
@@ -563,11 +567,12 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
                 <?php if ($it['judul']): ?>
                 <tr><td colspan="2" style="background:#f3ece2;font-weight:700"><?= htmlspecialchars($it['teks']) ?></td></tr>
                 <?php continue; endif; $pid_poin = -$it['idx']; ?>
+                <?php $nid = $pid_poin - $kunci_iku; $teks_narasi = $narasi_poin[$nid] ?? $narasi_poin[$pid_poin] ?? ''; ?>
                 <tr data-ro-id="<?= $pid_poin ?>">
                     <td><div class="ro-narasi-baca"><?= $it['no'] ?>. <?= htmlspecialchars($it['teks']) ?></div>
                         <textarea class="ro-narasi ro-narasi-tl" rows="3" placeholder="Narasi tindak lanjut (opsional)..."
-                            data-awal="<?= htmlspecialchars($narasi_poin[$pid_poin] ?? '') ?>"
-                            oninput="markDirty()"><?= htmlspecialchars($narasi_poin[$pid_poin] ?? '') ?></textarea></td>
+                            data-nid="<?= $nid ?>" data-awal="<?= htmlspecialchars($teks_narasi) ?>"
+                            oninput="markDirty()"><?= htmlspecialchars($teks_narasi) ?></textarea></td>
                     <td>
                         <div class="foto-galeri" id="foto-galeri-<?= $periode_sblm['id'] ?>-<?= $pid_poin ?>"></div>
                         <button type="button" class="btn-foto" onclick="pilihFoto(<?= $pid_poin ?>, <?= $periode_sblm['id'] ?>)">📷 Tambah Foto</button>
@@ -724,7 +729,7 @@ async function simpanSemua() {
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
                     periode_id:   PERIODE_ID_SBLM,
-                    ro_master_id: parseInt(ta.closest('tr').dataset.roId),
+                    ro_master_id: parseInt(ta.dataset.nid),
                     iku_kode:     IKU_KODE,
                     narasi:       ta.value || null,
                 })
