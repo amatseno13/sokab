@@ -59,25 +59,23 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f7fa;color:#2c3e50}
 .progress-bar{height:8px;background:#eee;border-radius:4px;overflow:hidden}
 .progress-fill{height:100%;background:#e67e22;border-radius:4px;transition:width .5s ease}
 
-.main{padding:1.5rem 2rem;max-width:1200px;margin:0 auto}
+.main{padding:1.5rem 2rem;max-width:1300px;margin:0 auto}
 
 .section-header{font-size:.8rem;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.08em;margin:1.5rem 0 .75rem}
 
-.iku-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:1rem}
-
-.iku-card{background:#fff;border-radius:10px;border:2px solid #eee;cursor:pointer;transition:all .2s;overflow:hidden}
-.iku-card:hover{border-color:#e67e22;box-shadow:0 4px 16px rgba(230,126,34,.15);transform:translateY(-2px)}
-.iku-card.status-isi{border-left:5px solid #27ae60}
-.iku-card.status-sebagian{border-left:5px solid #f39c12}
-.iku-card.status-kosong{border-left:5px solid #ddd}
-
-.card-top{padding:1rem 1rem .7rem;display:flex;align-items:flex-start;gap:.75rem}
-.kode-badge{background:#fff3e0;color:#e67e22;font-weight:700;font-size:.85rem;padding:.35rem .7rem;border-radius:6px;white-space:nowrap;border:1px solid #f0c080}
+.iku-tabel{width:100%;border-collapse:collapse;background:#fff;border:1px solid #eee;border-radius:10px;overflow:hidden}
+.iku-tabel th{background:#fafafa;text-align:left;font-size:.75rem;color:#888;text-transform:uppercase;letter-spacing:.05em;padding:.6rem .8rem;border-bottom:2px solid #eee}
+.iku-tabel td{padding:.6rem .8rem;border-bottom:1px solid #f0f0f0;vertical-align:middle}
+.iku-tabel tbody tr{cursor:pointer}
+.iku-tabel tbody tr:hover{background:#fff8f0}
+.iku-tabel tr.status-isi td:first-child{box-shadow:inset 5px 0 #27ae60}
+.iku-tabel tr.status-sebagian td:first-child{box-shadow:inset 5px 0 #f39c12}
+.iku-tabel tr.status-kosong td:first-child{box-shadow:inset 5px 0 #ddd}
+.kode-badge{background:#fff3e0;color:#e67e22;font-weight:700;font-size:.85rem;padding:.3rem .6rem;border-radius:6px;white-space:nowrap;border:1px solid #f0c080}
 .card-nama{font-size:.9rem;font-weight:600;color:#2c3e50;line-height:1.4}
 .card-sasaran{font-size:.78rem;color:#888;margin-top:.25rem}
 
-.card-bottom{padding:.7rem 1rem;background:#fafafa;border-top:1px solid #eee;display:flex;align-items:center;justify-content:space-between}
-.status-pill{font-size:.75rem;font-weight:700;padding:.3rem .7rem;border-radius:12px;display:flex;align-items:center;gap:.3rem}
+.status-pill{font-size:.75rem;font-weight:700;padding:.3rem .7rem;border-radius:12px;display:inline-flex;white-space:nowrap;align-items:center;gap:.3rem}
 .status-pill.isi{background:#e8f8ef;color:#27ae60}
 .status-pill.sebagian{background:#fef9e7;color:#f39c12}
 .status-pill.kosong{background:#f5f5f5;color:#aaa}
@@ -236,34 +234,25 @@ async function loadIKU() {
     let html = '';
     for (const [tkey, ikuList] of Object.entries(groups)) {
         html += `<div class="section-header">${TUJUAN_LABEL[tkey] || tkey}</div>`;
-        html += '<div class="iku-grid">';
+        html += '<table class="iku-tabel"><thead><tr><th style="width:80px">Kode</th><th>Indikator Kinerja</th><th style="width:140px">Status</th><th style="width:180px">Terakhir Diubah</th><th style="width:90px"></th></tr></thead><tbody>';
         ikuList.forEach(iku => {
             const st = iku.status_isi || 'kosong';
             const stLabel = { isi: '✅ Sudah Diisi', sebagian: '⚠️ Sebagian', kosong: '⬜ Belum Diisi' }[st];
             const lastEdit = iku.updated_at
                 ? `${iku.diisi_oleh || 'user'} · ${iku.updated_at.substring(0,16)}`
-                : '';
+                : '—';
             html += `
-            <div class="iku-card status-${st}" onclick="bukaEntry('${iku.kode}')">
-                <div class="card-top">
-                    <div>
-                        <div class="kode-badge">${iku.kode}</div>
-                    </div>
-                    <div>
-                        <div class="card-nama">${iku.nama}</div>
-                        <div class="card-sasaran">${iku.sasaran_kode} · ${(iku.sasaran_nama||'').substring(0,60)}...</div>
-                    </div>
-                </div>
-                <div class="card-bottom">
-                    <span class="status-pill ${st}">${stLabel}</span>
-                    <span class="last-edit">${lastEdit}</span>
-                    <button class="btn-isi" onclick="event.stopPropagation();bukaEntry('${iku.kode}')">
-                        ${st === 'kosong' ? 'Isi Data' : 'Edit'}
-                    </button>
-                </div>
-            </div>`;
+            <tr class="status-${st}" onclick="bukaEntry('${iku.kode}')">
+                <td><span class="kode-badge">${iku.kode}</span></td>
+                <td><div class="card-nama">${iku.nama}</div>
+                    <div class="card-sasaran">${iku.sasaran_kode} · ${iku.sasaran_nama||''}</div></td>
+                <td><span class="status-pill ${st}">${stLabel}</span></td>
+                <td class="last-edit">${lastEdit}</td>
+                <td><button class="btn-isi" onclick="event.stopPropagation();bukaEntry('${iku.kode}')">
+                    ${st === 'kosong' ? 'Isi Data' : 'Edit'}</button></td>
+            </tr>`;
         });
-        html += '</div>';
+        html += '</tbody></table>';
     }
     document.getElementById('iku-container').innerHTML = html;
 }
