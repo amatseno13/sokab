@@ -320,17 +320,13 @@ switch ($act) {
         // id negatif (poin tindak lanjut / uraian tambahan) hanya milik IKU yang dibuka.
         // Kolom iku_kode mungkin belum ada (sql/ck_ro_bukti_foto_iku.sql) → hanya foto RO biasa.
         $kode = $_GET['iku_kode'] ?? '';
-        // Kolom cap_status (sql/ck_ro_bukti_foto_cap.sql) juga opsional → dicoba dulu dengan, lalu tanpa.
-        $stmt = null;
-        foreach (['id, ro_master_id, file_path, original_name, keterangan, urutan, cap_status', 'id, ro_master_id, file_path, original_name, keterangan, urutan'] as $kolom) {
-            try {
-                $stmt = $db->prepare("SELECT $kolom FROM ck_ro_bukti_foto WHERE periode_id = ? AND (ro_master_id > 0 OR iku_kode = ?)
-                                      ORDER BY ro_master_id, urutan, id");
-                $stmt->execute([$periode_id, $kode]);
-                break;
-            } catch (PDOException $e) { $stmt = null; }
-        }
-        if (!$stmt) {
+        $sql  = "SELECT id, ro_master_id, file_path, original_name, keterangan, urutan
+                 FROM ck_ro_bukti_foto WHERE periode_id = ? AND (ro_master_id > 0 OR iku_kode = ?)
+                 ORDER BY ro_master_id, urutan, id";
+        try {
+            $stmt = $db->prepare($sql);
+            $stmt->execute([$periode_id, $kode]);
+        } catch (PDOException $e) {
             $stmt = $db->prepare("SELECT id, ro_master_id, file_path, original_name, keterangan, urutan
                 FROM ck_ro_bukti_foto WHERE periode_id = ? AND ro_master_id > 0 ORDER BY ro_master_id, urutan, id");
             $stmt->execute([$periode_id]);
@@ -413,19 +409,6 @@ switch ($act) {
         } catch (PDOException $e) { @unlink($dest); throw $e; }
 
         json_ok(['id' => (int)$db->lastInsertId(), 'file_path' => $file_path]);
-
-    // ── POST: simpan hasil pemeriksaan cap foto (ok | chat | kurang:… | kosong = belum diperiksa) ──
-    case 'foto_cap':
-        $b  = body();
-        $id = (int)($b['id'] ?? 0);
-        if (!$id) json_err('id required');
-        $st = mb_substr(trim((string)($b['status'] ?? '')), 0, 80);
-        try {
-            $db->prepare("UPDATE ck_ro_bukti_foto SET cap_status = ? WHERE id = ?")->execute([$st !== '' ? $st : null, $id]);
-            json_ok(['disimpan' => true]);
-        } catch (PDOException $e) {
-            json_ok(['disimpan' => false]);   // kolom belum ada (sql/ck_ro_bukti_foto_cap.sql) → label hanya di layar
-        }
 
     // ── POST: hapus satu foto bukti ──
     case 'foto_delete':
