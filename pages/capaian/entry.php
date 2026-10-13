@@ -7,6 +7,7 @@
 session_start();
 require_once __DIR__ . '/../../includes/check_session.php';
 require_once __DIR__ . '/../../config/database.php';
+require_once __DIR__ . '/../../includes/ro_berlaku.php';
 require_once __DIR__ . '/../../includes/docx_dokumen_sumber.php';   // dsParsePoin(): aturan poin/subjudul yang sama dengan dokumen
 requireLogin();
 
@@ -41,10 +42,11 @@ $stmt = $db->prepare("
     SELECT rm.*, re.vol_ro, re.progres, re.narasi
     FROM ck_ro_master rm
     LEFT JOIN ck_entry_ro re ON re.ro_master_id = rm.id AND re.periode_id = ?
-    WHERE rm.iku_kode = ?
+    WHERE rm.iku_kode = ? AND " . RO_BERLAKU . "
     ORDER BY rm.ro_order
 ");
-$stmt->execute([$periode_id, $kode]);
+$kp = roKunciPeriode($db, $periode_id);
+$stmt->execute([$periode_id, $kode, $kp, $kp]);
 $ros = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $tw = $periode['triwulan'];
@@ -76,10 +78,11 @@ if ($periode_sblm) {
         SELECT rm.*, re.narasi
         FROM ck_ro_master rm
         LEFT JOIN ck_entry_ro re ON re.ro_master_id = rm.id AND re.periode_id = ?
-        WHERE rm.iku_kode = ?
+        WHERE rm.iku_kode = ? AND " . RO_BERLAKU . "
         ORDER BY rm.ro_order
     ");
-    $stmt->execute([$periode_sblm['id'], $kode]);
+    $kp = roKunciPeriode($db, (int)$periode_sblm['id']);
+    $stmt->execute([$periode_sblm['id'], $kode, $kp, $kp]);
     $ros_sblm = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 

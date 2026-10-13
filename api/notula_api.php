@@ -17,6 +17,7 @@
 session_start();
 require_once __DIR__ . '/../includes/check_session.php';
 require_once __DIR__ . '/../config/database.php';
+require_once __DIR__ . '/../includes/ro_berlaku.php';
 require_once __DIR__ . '/../includes/docx_notula.php';
 require_once __DIR__ . '/../includes/docx_dokumen_sumber.php';
 require_once __DIR__ . '/../includes/xlsx_kertas_kerja.php';
@@ -248,10 +249,11 @@ function susunPayloadDokumenSumber(PDO $db, int $pid, string $kode, string $mode
         SELECT rm.id, rm.nama_ro, re.narasi
         FROM ck_ro_master rm
         LEFT JOIN ck_entry_ro re ON re.ro_master_id = rm.id AND re.periode_id = ?
-        WHERE rm.iku_kode = ?
+        WHERE rm.iku_kode = ? AND " . RO_BERLAKU . "
         ORDER BY rm.ro_order
     ");
-    $stmt->execute([$pid, $kode]);
+    $kp = roKunciPeriode($db, $pid);
+    $stmt->execute([$pid, $kode, $kp, $kp]);
     $ros = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $stmt = $db->prepare("
@@ -584,9 +586,11 @@ case 'generate_db':
         FROM ck_ro_master rm
         JOIN ck_entry_ro re ON re.ro_master_id = rm.id AND re.periode_id = :pid
         WHERE re.narasi IS NOT NULL AND re.narasi != ''
+          AND (rm.berlaku_dari IS NULL OR rm.berlaku_dari <= :kp1) AND (rm.berlaku_sampai IS NULL OR rm.berlaku_sampai >= :kp2)
         ORDER BY rm.iku_kode, rm.ro_order
     ");
-    $stmt->execute([':pid' => $pid]);
+    $kp = roKunciPeriode($db, $pid);
+    $stmt->execute([':pid' => $pid, ':kp1' => $kp, ':kp2' => $kp]);
     $ro_map = [];
     foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
         $nama = trim(preg_replace('/^\d+\s+[A-Z]{3}\s+\w+\.\s*/', '', $r['nama_ro']));
@@ -602,8 +606,10 @@ case 'generate_db':
     // Tabel mungkin belum ada (sql/ck_uraian_node.sql) → dilewati.
     $ada_uraian = [];
     try {
-        $stmt = $db->prepare("SELECT iku_kode, tipe, narasi FROM ck_uraian_node WHERE periode_id = :pid ORDER BY ro_master_id, urutan, id");
-        $stmt->execute([':pid' => $pid]);
+        $stmt = $db->prepare("SELECT u.iku_kode, u.tipe, u.narasi FROM ck_uraian_node u JOIN ck_ro_master rm ON rm.id = u.ro_master_id
+            WHERE u.periode_id = :pid AND (rm.berlaku_dari IS NULL OR rm.berlaku_dari <= :kp1) AND (rm.berlaku_sampai IS NULL OR rm.berlaku_sampai >= :kp2)
+            ORDER BY u.ro_master_id, u.urutan, u.id");
+        $stmt->execute([':pid' => $pid, ':kp1' => $kp, ':kp2' => $kp]);
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $u) {
             $ada_uraian[$u['iku_kode']] = true;
             if ($u['tipe'] === 'kegiatan' && trim((string)$u['narasi']) !== '') $ro_map[$u['iku_kode']][] = trim($u['narasi']);
