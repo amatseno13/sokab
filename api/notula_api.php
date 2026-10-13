@@ -177,12 +177,10 @@ function tulisMetaSementara(array $in): string {
 // ══════════════════════════════════════════════════════════
 /**
  * Capaian (%) = realisasi ÷ pembagi × 100 (pembagi: alokasi triwulan atau target PK).
- * Realisasi 0 dan pembagi 0 → capaian 0 (bukan kosong). null = realisasi belum ada / pembagi 0 tetapi realisasi > 0.
+ * null (tampil "-") bila realisasi belum ada atau pembagi 0; realisasi boleh 0, capaiannya tetap "-" kalau pembagi 0.
  */
 function capaianPersen(?float $realisasi, float $pembagi): ?float {
-    if ($realisasi === null) return null;
-    if ($pembagi > 0) return $realisasi / $pembagi * 100;
-    return $realisasi == 0.0 ? 0.0 : null;
+    return ($realisasi !== null && $pembagi > 0) ? $realisasi / $pembagi * 100 : null;
 }
 
 /**
