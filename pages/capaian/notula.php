@@ -112,6 +112,12 @@ tr:hover td{background:#fffaf5}
 .pill.lengkap{background:#e8f8ef;color:#27ae60}
 .pill.sebagian{background:#fef9e7;color:#f39c12}
 .pill.kosong{background:#f5f5f5;color:#aaa}
+.pill.klik{cursor:pointer;border:1px solid transparent;font-family:inherit}
+.pill.klik:hover{border-color:currentColor;filter:brightness(.95)}
+.ket-ikon{display:inline-block;width:1.1rem;font-weight:700}
+.ket-ok{color:#27ae60}.ket-no{color:#e74c3c}.ket-opsi{color:#aaa}
+.ket-daftar{list-style:none;margin:.2rem 0 .8rem;padding:0;font-size:.84rem;line-height:1.7;color:#374151}
+.ket-judul{font-size:.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-top:.7rem}
 
 .loading{display:flex;align-items:center;justify-content:center;gap:.75rem;padding:2rem;color:#aaa;font-size:.9rem}
 .spinner{width:20px;height:20px;border:3px solid #eee;border-top-color:#e67e22;border-radius:50%;animation:spin .8s linear infinite}
@@ -467,6 +473,60 @@ function statusIKU(i) {
     return (angka && narasi) ? 'lengkap' : (angka || narasi) ? 'sebagian' : 'kosong';
 }
 
+/** Daftar bagian satu IKU: terisi atau belum. 'penentu' = bagian yang dipakai menghitung status Lengkap/Sebagian. */
+function bagianIKU(i) {
+    const ada = k => (i[k] || '').toString().trim() !== '';
+    return {
+        penentu: [
+            ['Realisasi triwulan (angka capaian)', i.real_tw !== '' && i.real_tw !== null && i.real_tw !== undefined],
+            ['Narasi realisasi RO / uraian kegiatan', !!i.ada_uraian || ada('ro_narasi')],
+            ['Kendala', ada('kendala')],
+            ['Solusi', ada('solusi')],
+            ['Rencana Tindak Lanjut (RTL)', ada('rtl')],
+        ],
+        pelengkap: [
+            ['Batas waktu tindak lanjut', ada('batas')],
+            ['Tautan dokumen sumber', ada('link_bukti')],
+            ['Tautan bukti tindak lanjut TW sebelumnya', ada('link_tl_sblm')],
+        ],
+    };
+}
+
+/** Popup keterangan: bagian mana yang sudah dan belum terisi untuk satu IKU (diklik dari kolom Status). */
+function keteranganIKU(kode) {
+    const i = (HASIL && HASIL.iku_list || []).find(x => x.kode === kode);
+    if (!i) return;
+    khStyle();   // gaya dialog bersama (assets/js/konfirmasi.js)
+    const st = statusIKU(i), b = bagianIKU(i);
+    const kurang = [];
+    if (!b.penentu[0][1]) kurang.push('realisasi triwulan');
+    if (!b.penentu.slice(1).some(x => x[1])) kurang.push('narasi (minimal salah satu: narasi RO/uraian kegiatan, kendala, solusi, atau RTL)');
+    const el = document.createElement('div');
+    el.className = 'kh-back';
+    el.innerHTML = '<div class="kh-box" role="dialog" aria-modal="true" style="max-width:460px"><h4></h4><p class="ket-ringkas"></p><div class="ket-isi"></div>' +
+                   '<div class="kh-aksi"><button type="button" class="kh-batal">Tutup</button></div></div>';
+    el.querySelector('h4').textContent = `IKU ${i.kode}`;
+    el.querySelector('.ket-ringkas').textContent = st === 'lengkap'
+        ? 'Status Lengkap: realisasi dan narasi sudah terisi.'
+        : 'Agar Lengkap masih perlu: ' + kurang.join(' dan ') + '.';
+    const baris = (judul, daftar, opsi) => {
+        let h = `<div class="ket-judul">${judul}</div><ul class="ket-daftar">`;
+        daftar.forEach(([nama, terisi]) => {
+            h += terisi ? `<li><span class="ket-ikon ket-ok">✓</span>${nama}</li>`
+                        : `<li><span class="ket-ikon ${opsi ? 'ket-opsi' : 'ket-no'}">${opsi ? '–' : '✗'}</span>${nama} <b style="color:${opsi ? '#9ca3af' : '#e74c3c'}">— belum diisi</b></li>`;
+        });
+        return h + '</ul>';
+    };
+    el.querySelector('.ket-isi').innerHTML = baris('Menentukan status', b.penentu, false) + baris('Pelengkap (tidak memengaruhi status)', b.pelengkap, true);
+    const tutup = () => { document.removeEventListener('keydown', tombol); el.remove(); };
+    const tombol = e => { if (e.key === 'Escape') tutup(); };
+    el.querySelector('.kh-batal').onclick = tutup;
+    el.onclick = e => { if (e.target === el) tutup(); };
+    document.addEventListener('keydown', tombol);
+    document.body.appendChild(el);
+    el.querySelector('.kh-batal').focus();
+}
+
 function renderPreview(r) {
     const c = { lengkap: 0, sebagian: 0, kosong: 0 };
     r.iku_list.forEach(i => c[statusIKU(i)]++);
@@ -511,7 +571,7 @@ function renderPreview(r) {
                 <td class="num">${i.real_tw || '—'}</td>
                 <td class="num">${i.capaian_tw || '—'}</td>
                 <td class="num">${i.capaian_pk || '—'}</td>
-                <td><span class="pill ${st}">${lbl}</span></td>
+                <td><button type="button" class="pill klik ${st}" title="Klik untuk melihat bagian yang belum terisi" onclick="keteranganIKU('${i.kode}')">${lbl}</button></td>
             </tr>`;
         });
         html += '</tbody></table></div>';
