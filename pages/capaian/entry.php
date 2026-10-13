@@ -238,14 +238,12 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
 
 /* ── Galeri Bukti Foto RO ── */
 .foto-galeri{display:flex;flex-direction:column;gap:.2rem;margin-bottom:.5rem;min-height:2px}
-.foto-baris{display:flex;flex-wrap:wrap;align-items:center;gap:.2rem .5rem;padding:.2rem .5rem;border:1px solid var(--line);border-radius:6px;background:var(--paper);font-size:.76rem}
-.foto-baris a{flex:1 1 0;min-width:7rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-soft);text-decoration:none}
+.foto-baris{display:flex;align-items:center;gap:.5rem;padding:.2rem .5rem;border:1px solid var(--line);border-radius:6px;background:var(--paper);font-size:.76rem}
+.foto-baris a{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-soft);text-decoration:none}
 .foto-baris a:hover{color:var(--brand-dark);text-decoration:underline}
 .foto-baris .hapus{flex:none;background:none;border:none;color:var(--ink-faint);cursor:pointer;font-size:.8rem;line-height:1;padding:.1rem .25rem}
 .foto-baris .hapus:hover{color:var(--err)}
 .foto-baris.uploading{opacity:.5}
-.foto-baris .cap-ok{order:5;flex:none;font-size:.68rem;font-weight:700;color:#166534;background:#dcfce7;border-radius:4px;padding:.05rem .35rem}
-.foto-baris .peringatan{order:5;flex:none;font-size:.68rem;font-weight:700;color:#b45309;background:#fef3c7;border-radius:4px;padding:.05rem .35rem}
 .btn-foto{background:var(--paper);border:1.5px dashed #cbd0d8;border-radius:var(--radius-sm);padding:.4rem .7rem;font-size:.76rem;color:var(--ink-soft);cursor:pointer;font-family:inherit;font-weight:600;transition:.15s}
 .btn-foto:hover{border-color:var(--brand);color:var(--brand-dark);background:var(--brand-tint)}
 </style>
@@ -1138,7 +1136,6 @@ async function unggahFoto(inputEl) {
     const total = Math.min(files.length, Math.max(tersisa, 0));
     let berhasil = 0;
     const gagal = [];
-    const diunggah = [];   // foto yang berhasil tersimpan → diperiksa tanggal/jam/koordinatnya
     for (const file of files) {
         if (tersisa-- <= 0) break;
         const pdf = inputEl.hasAttribute('data-pdf');
@@ -1172,7 +1169,6 @@ async function unggahFoto(inputEl) {
             const a = placeholder.querySelector('a');
             a.href = `../../${r.file_path}`; a.target = '_blank'; a.textContent = file.name;
             placeholder.insertAdjacentHTML('beforeend', `<button class="hapus" title="Hapus" onclick="hapusFoto(${r.id}, ${roId}, ${periodeId})">✕</button>`);
-            if (!pdf) diunggah.push({file, baris: placeholder});
             berhasil++;
         } catch (e) {
             placeholder.remove();
@@ -1183,119 +1179,6 @@ async function unggahFoto(inputEl) {
     if (gagal.length) showToast(`Berhasil ${berhasil} dari ${total}. Gagal: ${gagal.join('; ')}`, false, 12000);
     else if (total > 1) showToast(`${berhasil} file berhasil diunggah`, true);
     inputEl.value = '';
-    if (diunggah.length) periksaBuktiFoto(diunggah);   // tidak ditunggu: foto sudah tersimpan, ini hanya peringatan
-}
-
-// ── Deteksi awal bukti foto: tanggal, jam, koordinat ────────────────────────
-// Yang dihitung hanya cap yang TERTERA DI DALAM GAMBAR (EXIF dan nama file diabaikan). Foto tetap tersimpan;
-// bila tanggal/jam/koordinat tidak terbaca, baris foto diberi peringatan. Cara baca (OCR tesseract.js dari CDN):
-//  - semua gambar (JPG/JPEG/PNG): area bawah dan atas (tempat aplikasi kamera bercap waktu menulis capnya), kontras tinggi, resolusi 1000 px
-//  - bila belum lengkap dan tampak screenshot (nama 'Screenshot…' / PNG): seluruh gambar; layar WhatsApp
-//    (terdeteksi dari teksnya) hanya diwajibkan memuat tanggal — jam dan koordinat tidak
-// ponytail: heuristik — teks buram/kecil bisa lolos baca; hanya peringatan, tidak memblokir.
-let ocrWorker = null;
-async function ocrSiap() {
-    if (ocrWorker) return ocrWorker;
-    if (!window.Tesseract) await new Promise((ok, gagal) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
-        s.onload = ok; s.onerror = () => gagal(new Error('OCR tidak dapat dimuat'));
-        document.head.appendChild(s);
-    });
-    // Pemuatan inti OCR dari CDN kadang gagal/menggantung (galat terjadi di dalam worker, promise tak pernah selesai):
-    // beri batas waktu, coba ulang sekali, lalu menyerah dengan pesan yang jelas.
-    const batas = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error('OCR terlalu lama/gagal dimuat')), ms))]);
-    let w;
-    try { w = await batas(Tesseract.createWorker('eng'), 40000); }
-    catch (e) { w = await batas(Tesseract.createWorker('eng'), 40000); }
-    await w.setParameters({ tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT });
-    return ocrWorker = w;
-}
-
-const POLA_TGL  = /\b\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}\b|\b\d{4}[\/\-.]\d{1,2}[\/\-.]\d{1,2}\b|\b\d{1,2}\s+(?:jan|feb|mar|apr|mei|may|jun|jul|agu|aug|sep|okt|oct|nov|des|dec)[a-z]*\.?,?\s+\d{2,4}\b/i;
-const POLA_KOOR = /[-+]?\d{1,3}\.\d{3,}\s*°?\s*[,;]?\s*[-+]?\d{1,3}\.\d{3,}|\b(?:lat|lng|lon|long|latitude|longitude)\b[^\d\-+\n]{0,6}[-+]?\d{1,3}\.\d{3,}|\b\d{1,3}\s*°\s*\d{1,2}\s*['′’]/i;
-const POLA_JAM  = /\b(?:[01]?\d|2[0-3])[:.][0-5]\d(?:[:.][0-5]\d)?(?![\d.\/])/;
-const POLA_CHAT = /whatsapp|ketik pesan|type a message|mengetik|terakhir dilihat|last seen|online/i;
-
-/** Teks hasil OCR → {tanggal, jam, koordinat, chat}. Koordinat & tanggal dibuang dulu agar tidak terbaca sebagai jam. */
-function analisisTeks(teks) {
-    const koordinat = POLA_KOOR.test(teks);
-    const tanpaKoor = teks.replace(new RegExp(POLA_KOOR.source, 'g'), ' ');
-    const tanggal = POLA_TGL.test(tanpaKoor);
-    const tanpaTgl = tanpaKoor.replace(new RegExp(POLA_TGL.source, 'gi'), ' ');
-    return { tanggal, jam: POLA_JAM.test(tanpaTgl), koordinat, chat: POLA_CHAT.test(teks) };
-}
-
-/** Potong area gambar → canvas hitam-putih. mode angka (mis. 110): piksel lebih terang dari ambang itu jadi teks hitam (cap terang di atas kotak gelap); 'gelap': teks gelap jadi hitam; 'asli': tanpa ambang. */
-function potongUntukOcr(bmp, x, y, w, h, mode, lebar = 1400) {
-    const skala = lebar / w, c = document.createElement('canvas');
-    c.width = lebar; c.height = Math.max(1, Math.round(h * skala));
-    const g = c.getContext('2d', { willReadFrequently: true });
-    g.drawImage(bmp, x, y, w, h, 0, 0, c.width, c.height);
-    if (mode !== 'asli') {
-        const d = g.getImageData(0, 0, c.width, c.height), p = d.data;
-        for (let i = 0; i < p.length; i += 4) {
-            const l = .299 * p[i] + .587 * p[i + 1] + .114 * p[i + 2];
-            p[i] = p[i + 1] = p[i + 2] = (mode === 'gelap' ? l < 85 : l > mode) ? 0 : 255;
-        }
-        g.putImageData(d, 0, 0);
-    }
-    return c;
-}
-
-async function nilaiBuktiFoto(file) {
-    const f = { tanggal: false, jam: false, koordinat: false, chat: false };
-    const lengkap = () => f.tanggal && (f.chat || (f.jam && f.koordinat));   // WhatsApp: cukup tanggal; foto: tanggal + jam + koordinat
-    const gabung = a => { for (const k of ['tanggal', 'jam', 'koordinat', 'chat']) f[k] = f[k] || a[k]; };
-
-    {
-        const w = await ocrSiap();
-        const bmp = await createImageBitmap(file);   // JPG, JPEG, dan PNG
-        const W = bmp.width, H = bmp.height;
-        // 1) area cap waktu: pojok bawah dan atas, teks terang di atas gelap atau sebaliknya (berlaku untuk semua gambar)
-        // Urutan dari yang paling umum (cap terang di bawah) dan berhenti begitu lengkap; tiap potongan 1000 px lebar
-        // supaya cepat — foto tanpa cap tanpa penghentian dini bisa memakan puluhan detik.
-        const bawah = [Math.round(H * .74), Math.round(H * .26)], atas = [0, Math.round(H * .24)];
-        // Ambang 110 membaca teks berwarna redup (biru/kuning) di kotak gelap; 170 untuk teks putih di foto yang terang
-        for (const [[y, h], mode] of [[bawah, 110], [atas, 110], [bawah, 170], [bawah, 'gelap']]) {
-            gabung(analisisTeks((await w.recognize(potongUntukOcr(bmp, 0, y, Math.round(W * .75), h, mode, 1000))).data.text));
-            if (lengkap()) break;
-        }
-        // 2) belum lengkap & tampak screenshot (nama 'Screenshot…' atau PNG): baca seluruh gambar — layar WhatsApp
-        if (!lengkap() && (/screen\s*shot|tangkapan/i.test(file.name) || file.type === 'image/png')) {
-            gabung(analisisTeks((await w.recognize(potongUntukOcr(bmp, 0, 0, W, H, 'asli', Math.min(W, 1100)))).data.text));
-        }
-        bmp.close?.();
-    }
-    const kurang = [];
-    if (!f.tanggal) kurang.push('tanggal');
-    if (!f.chat && !f.jam) kurang.push('jam');
-    if (!f.chat && !f.koordinat) kurang.push('koordinat lokasi');
-    return { kurang, chat: f.chat };
-}
-
-async function periksaBuktiFoto(daftar) {
-    const temuan = [];
-    showToast('Memeriksa tanggal/jam/koordinat pada foto…', true, 4000);
-    for (const {file, baris} of daftar) {
-        try {
-            const {kurang, chat} = await nilaiBuktiFoto(file);
-            if (!kurang.length) {   // lolos: label hijau
-                baris.querySelector('a')?.insertAdjacentHTML('afterend',
-                    `<span class="cap-ok" title="Cap tertera di dalam gambar">${chat ? '✓ tanggal terbaca' : '✓ cap tanggal, jam & lokasi'}</span>`);
-                continue;
-            }
-            temuan.push(`${file.name}: ${kurang.join(', ')}`);
-            baris.querySelector('a')?.insertAdjacentHTML('afterend',
-                `<span class="peringatan" title="Tidak terdeteksi: ${esc(kurang.join(', '))}. Foto tetap tersimpan.">⚠ tanpa ${esc(kurang.join('/'))}</span>`);
-        } catch (e) {   // OCR gagal dimuat/dijalankan → jangan menuduh fotonya, tapi beri tahu pemeriksaannya tidak jalan
-            console.warn('Pemeriksaan foto gagal:', file.name, e);
-            showToast('Pemeriksaan tanggal/koordinat foto tidak dapat dijalankan: ' + (e.message || e) + ' (butuh internet untuk memuat pustaka OCR).', false, 12000);
-            return;
-        }
-    }
-    if (temuan.length) showToast(`Peringatan bukti foto — tidak terdeteksi: ${temuan.join('; ')}. Foto tetap tersimpan.`, false, 15000);
-    else showToast('Pemeriksaan selesai: semua foto memuat tanggal, jam, dan koordinat.', true, 5000);
 }
 
 async function hapusFoto(fotoId, roId, periodeId) {
