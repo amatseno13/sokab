@@ -86,7 +86,7 @@ function loadLakinContent(tipe) {
                         <a href="api/lakin.php?action=download&id=${f.id}" class="btn-download" target="_blank">
                             ${uploadMethod === 'gdrive' ? '🔗 Buka' : '⬇️ Download'}
                         </a>
-                        ${isAdmin ? `<button class="btn-hapus-lakin" onclick="hapusLakin(${f.id},'${tipe}')" title="Hapus">🗑️</button>` : ''}
+                        ${isAdmin ? `<button class="btn-hapus-lakin" onclick="hapusLakin(${f.id},'${tipe}')" title="Hapus">Hapus</button>` : ''}
                     </div>
                 </div>`;
             }).join('');

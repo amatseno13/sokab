@@ -1,7 +1,7 @@
 <?php /* Halaman: monitoring-kinerja */ ?>
             <div id="page-monitoring-kinerja" class="content-page">
                 <div class="page-header-bar">
-                    <div class="page-header-icon" style="background:#c6f6d5">📈</div>
+                    <div class="page-header-icon"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 14 4-4" /><path d="M3.34 19a10 10 0 1 1 17.32 0" /></svg></div>
                     <div><h2 class="page-title">Monitoring Capaian Kinerja</h2><p class="page-subtitle">Laporan Monitoring Periodik</p></div>
                 </div>
                 <!-- Container Dokumen Monitoring -->
@@ -15,7 +15,7 @@
                         <div class="stat-card" style="grid-column: 1/-1; background: white; border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                                 <div>
-                                    <h3 style="font-size: 1.25rem; color: #1e293b; margin-bottom: 0.5rem; font-weight: 600;">📊 Tabel IKSS</h3>
+                                    <h3 style="font-size: 1.25rem; color: #1e293b; margin-bottom: 0.5rem; font-weight: 600;">Tabel IKSS</h3>
                                     <p style="color: #64748b; font-size: 0.9rem;">Indikator Kinerja Sasaran Strategis</p>
                                 </div>
                                 <div style="display: flex; gap: 0.75rem; align-items: center;">
@@ -27,7 +27,7 @@
                                     <button id="ikssFilterTW3" class="ikss-tw-btn" data-tw="TW III" style="padding: 0.5rem 1rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem; background: white; color: #64748b; cursor: pointer;">TW III</button>
                                     <button id="ikssFilterTW4" class="ikss-tw-btn" data-tw="TW IV" style="padding: 0.5rem 1rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 0.85rem; background: white; color: #64748b; cursor: pointer;">TW IV</button>
                                     <?php if($user_role==='admin'): ?>
-                                    <button onclick="kelolaIKSS()" style="padding: 0.5rem 1rem; background: #16a34a; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500;">⚙️ Kelola IKSS</button>
+                                    <button onclick="kelolaIKSS()" style="padding: 0.5rem 1rem; background: #16a34a; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500;">Kelola IKSS</button>
                                     <?php endif; ?>
                                 </div>
                             </div>

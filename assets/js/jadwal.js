@@ -106,8 +106,8 @@
                         <button class="btn-status btn-status-${j.status}" onclick="gantiStatus(${j.id}, '${j.status}')" title="Ganti status">
                             ${labelStatus(j.status)}
                         </button>
-                        <button class="btn-edit-item" onclick="editJadwal(${j.id})" title="Edit">✏️</button>
-                        <button class="btn-hapus-item" onclick="hapusJadwal(${j.id})" title="Hapus">🗑️</button>
+                        <button class="btn-edit-item" onclick="editJadwal(${j.id})" title="Edit">Edit</button>
+                        <button class="btn-hapus-item" onclick="hapusJadwal(${j.id})" title="Hapus">Hapus</button>
                     </div>
                 </div>
             `).join('');
@@ -136,7 +136,7 @@
                                     <span class="kat-badge">${j.kategori}</span>
                                     Deadline: ${formatTgl(j.tanggal_selesai)}
                                 </div>
-                                <div class="psisa ${cls}">⏰ ${sisa} hari lagi</div>
+                                <div class="psisa ${cls}">${sisa} hari lagi</div>
                             </div>
                             <span class="status-badge status-${j.status}">${labelStatus(j.status)}</span>
                         </div>`;
@@ -162,7 +162,7 @@
                             <div class="popup-item-info">
                                 <div class="pjudul">${escHtml(j.judul)}</div>
                                 <div class="pdate">Deadline: ${formatTgl(j.tanggal_selesai)}</div>
-                                <div class="psisa ${cls}">⏰ ${sisa} hari lagi</div>
+                                <div class="psisa ${cls}">${sisa} hari lagi</div>
                             </div>
                         </div>`;
                     }).join('');
@@ -202,7 +202,7 @@
             document.getElementById('inp_deskripsi').value = jadwal.deskripsi || '';
             
             // Ubah judul modal dan text button
-            document.getElementById('modalJadwalTitle').textContent = '✏️ Edit Jadwal SAKIP';
+            document.getElementById('modalJadwalTitle').textContent = 'Edit Jadwal SAKIP';
             document.getElementById('btnSimpanJadwal').textContent = '💾 Update Jadwal';
             
             // Buka modal
@@ -299,7 +299,7 @@
                     kalender.refetchEvents();
                     loadSemuaJadwal();
                     loadUpcoming();
-                    showToast('🗑️ Jadwal dihapus', 'success');
+                    showToast('Jadwal dihapus', 'success');
                 }
             });
         }

@@ -67,9 +67,9 @@
                         <td>${roleBadge}</td>
                         <td style="font-size:0.8rem;color:#666">${lastLogin}</td>
                         <td style="text-align:center">
-                            <button class="btn-user-action btn-edit-user" onclick="editUser(${u.id})" title="Edit">✏️ Edit</button>
+                            <button class="btn-user-action btn-edit-user" onclick="editUser(${u.id})" title="Edit">Edit</button>
                             <button class="btn-user-action btn-reset-pw" onclick="bukaResetPassword(${u.id}, '${escHtml(u.username)}')" title="Reset Password">🔑 Reset</button>
-                            ${isSelf ? '<span style="font-size:0.75rem;color:#999">(Anda)</span>' : `<button class="btn-user-action btn-delete-user" onclick="hapusUser(${u.id}, '${escHtml(u.username)}')" title="Hapus">🗑️ Hapus</button>`}
+                            ${isSelf ? '<span style="font-size:0.75rem;color:#999">(Anda)</span>' : `<button class="btn-user-action btn-delete-user" onclick="hapusUser(${u.id}, '${escHtml(u.username)}')" title="Hapus">Hapus</button>`}
                         </td>
                     </tr>
                 `;
@@ -100,7 +100,7 @@
             document.getElementById('inp_nama_lengkap').value = user.nama_lengkap;
             document.getElementById('inp_role').value = user.role;
             
-            document.getElementById('modalUserTitle').textContent = '✏️ Edit User';
+            document.getElementById('modalUserTitle').textContent = 'Edit User';
             document.getElementById('btnSimpanUser').textContent = '💾 Update User';
             document.getElementById('groupPassword').style.display = 'none';
             document.getElementById('inp_password').required = false;

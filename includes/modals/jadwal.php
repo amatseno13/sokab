@@ -57,7 +57,7 @@
     <!-- Popup Deadline -->
     <div class="popup-deadline" id="popupDeadline">
         <div class="popup-header">
-            <h4>🚨 Deadline Dalam 30 Hari!</h4>
+            <h4>Deadline Dalam 30 Hari!</h4>
             <button class="popup-close" onclick="tutupPopup()">✕</button>
         </div>
         <div id="popupList"></div>
