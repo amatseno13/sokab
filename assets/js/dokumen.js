@@ -130,41 +130,35 @@ function loadCapaianKinerja() {
                 return;
             }
 
-            grid.innerHTML = data.map(d => {
+            const isMonKin = (menuKey === 'monitoring_kinerja');
+            const baris = data.map((d, i) => {
                 const uploadMethod = d.upload_method || 'gdrive';
-                const methodBadge = uploadMethod === 'file' 
-                    ? '<span class="badge-file">📁 File</span>' 
-                    : '<span class="badge-gdrive">☁️ Link</span>';
                 const btnAction = uploadMethod === 'file'
-                    ? `<a href="api/dokumen.php?action=download&id=${d.id}" class="btn-buka-gdrive" target="_blank">⬇️ Download</a>`
-                    : `<a href="${escHtml(d.url_gdrive || '')}" target="_blank" class="btn-buka-gdrive">🔗 Buka</a>`;
-                
-                return `
-                <div class="dok-card">
-                    <div class="dok-card-header">
-                        <div class="dok-card-title">${escHtml(d.judul)} ${methodBadge}</div>
-                        ${d.tahun ? `<span class="dok-card-tahun">${d.tahun}</span>` : ''}
-                    </div>
-                    ${d.sub_kategori ? (() => {
-                        if (menuKey === 'monitoring_kinerja') {
-                            const parts = d.sub_kategori.split('|');
-                            const tw  = parts[0] ? `<span style="background:#ebf8ff;color:#1e3a8a;padding:2px 8px;border-radius:10px;font-size:0.7rem;font-weight:700;margin-right:4px">${escHtml(parts[0])}</span>` : '';
-                            const kat = parts[1] ? `<span style="font-size:0.74rem;color:#0ea5e9;font-weight:600">${escHtml(parts[1])}</span>` : '';
-                            return `<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">${tw}${kat}</div>`;
-                        }
-                        return `<div style="font-size:0.74rem;color:#0ea5e9;font-weight:600">${escHtml(d.sub_kategori)}</div>`;
-                    })() : ''}
-                    ${d.keterangan ? `<div class="dok-card-ket">${escHtml(d.keterangan)}</div>` : ''}
-                    ${uploadMethod === 'file' && d.filesize_human ? `<div style="font-size:0.75rem;color:#666;margin-top:4px">📊 ${d.filesize_human}</div>` : ''}
-                    <div class="dok-card-footer">
-                        ${btnAction}
-                        ${isAdmin ? `<div class="dok-admin-actions">
-                            <button class="btn-dok-edit" onclick="editDokumen(${d.id},'${menuKey}')" title="Edit">✏️</button>
-                            <button class="btn-dok-hapus" onclick="hapusDokumen(${d.id},'${menuKey}')" title="Hapus">🗑️</button>
-                        </div>` : ''}
-                    </div>
-                </div>`;
+                    ? `<a href="api/dokumen.php?action=download&id=${d.id}" class="btn-buka-gdrive" target="_blank">Download</a>`
+                    : `<a href="${escHtml(d.url_gdrive || '')}" target="_blank" class="btn-buka-gdrive">Buka</a>`;
+                const jenis = uploadMethod === 'file' ? 'File' + (d.filesize_human ? ' · ' + d.filesize_human : '') : 'Link';
+                let kat = '';
+                if (d.sub_kategori) {
+                    const parts = isMonKin ? d.sub_kategori.split('|') : [d.sub_kategori];
+                    kat = parts.filter(Boolean).map(x => escHtml(x)).join(' · ');
+                }
+                return `<tr>
+                    <td class="dok-no">${i + 1}</td>
+                    <td><div class="dok-card-title">${escHtml(d.judul)}</div>
+                        ${d.keterangan ? `<div class="dok-card-ket">${escHtml(d.keterangan)}</div>` : ''}</td>
+                    <td>${d.tahun || ''}</td>
+                    <td>${kat}</td>
+                    <td class="dok-jenis">${jenis}</td>
+                    <td class="dok-aksi">${btnAction}${isAdmin ? ` <span class="dok-admin-actions">
+                        <button class="btn-dok-edit" onclick="editDokumen(${d.id},'${menuKey}')" title="Edit">Edit</button>
+                        <button class="btn-dok-hapus" onclick="hapusDokumen(${d.id},'${menuKey}')" title="Hapus">Hapus</button>
+                    </span>` : ''}</td>
+                </tr>`;
             }).join('');
+            grid.innerHTML = `<table class="dok-tabel"><thead><tr>
+                <th style="width:44px">No</th><th>Judul</th><th style="width:70px">Tahun</th>
+                <th>${isMonKin ? 'Triwulan · Kategori' : 'Kategori'}</th><th style="width:150px">Jenis</th><th style="width:${isAdmin ? 210 : 130}px"></th>
+                </tr></thead><tbody>${baris}</tbody></table>`;
         }
 
         // ── MODAL GDRIVE ────────────────────────────────
