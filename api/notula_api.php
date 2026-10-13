@@ -176,6 +176,26 @@ function tulisMetaSementara(array $in): string {
 // ROUTER
 // ══════════════════════════════════════════════════════════
 /**
+ * Capaian (%) = realisasi ÷ pembagi × 100 (pembagi: alokasi triwulan atau target PK).
+ * Realisasi 0 dan pembagi 0 → capaian 0 (bukan kosong). null = realisasi belum ada / pembagi 0 tetapi realisasi > 0.
+ */
+function capaianPersen(?float $realisasi, float $pembagi): ?float {
+    if ($realisasi === null) return null;
+    if ($pembagi > 0) return $realisasi / $pembagi * 100;
+    return $realisasi == 0.0 ? 0.0 : null;
+}
+
+/**
+ * Realisasi IKU persen dari X dan Y: X ÷ Y × 100. X = 0 dan Y = 0 (belum ada yang dihasilkan) dihitung 0%,
+ * bukan "kosong". null = belum diisi atau tidak dapat dihitung (Y = 0 tetapi X > 0).
+ */
+function realisasiXY($x, $y): ?float {
+    if ($x === null || $y === null || $x === '' || $y === '') return null;
+    if ((float)$y > 0) return (float)$x / (float)$y * 100;
+    return (float)$x == 0.0 ? 0.0 : null;
+}
+
+/**
  * Susun payload dokumen sumber untuk SATU IKU di SATU periode (dipakai dokumen per IKU dan dokumen gabungan).
  * $mode 'tl' = Tindak Lanjut TW sebelumnya; $jenis 'solusi' = Bukti Solusi dari Kendala.
  * @return array [payload, baris ck_periode, apakah jenis solusi]
@@ -211,14 +231,12 @@ function susunPayloadDokumenSumber(PDO $db, int $pid, string $kode, string $mode
     $alokasi = (float)$r["alokasi_tw{$tw_idx}"];
     $realisasi = null;
     if ($r['jenis_satuan'] === '%' && (int)$r['has_xy'] === 1) {
-        if ($r['x_val'] !== null && $r['y_val'] !== null && (float)$r['y_val'] > 0) {
-            $realisasi = (float)$r['x_val'] / (float)$r['y_val'] * 100;
-        }
+        $realisasi = realisasiXY($r['x_val'], $r['y_val']);
     } elseif ($r['real_val'] !== null && $r['real_val'] !== '') {
         $realisasi = (float)$r['real_val'];
     }
-    $cap_tw = ($realisasi !== null && $alokasi > 0) ? $realisasi / $alokasi * 100 : null;
-    $cap_pk = ($realisasi !== null && $target  > 0) ? $realisasi / $target  * 100 : null;
+    $cap_tw = capaianPersen($realisasi, $alokasi);
+    $cap_pk = capaianPersen($realisasi, $target);
 
     $batas = '';
     if (!empty($r['batas_waktu']) && $r['batas_waktu'] !== '0000-00-00') {
@@ -612,15 +630,13 @@ case 'generate_db':
         // Realisasi: IKU '%' dihitung X/Y*100, selain itu diambil langsung
         $realisasi = null;
         if ($r['jenis_satuan'] === '%' && (int)$r['has_xy'] === 1) {
-            if ($r['x_val'] !== null && $r['y_val'] !== null && (float)$r['y_val'] > 0) {
-                $realisasi = (float)$r['x_val'] / (float)$r['y_val'] * 100;
-            }
+            $realisasi = realisasiXY($r['x_val'], $r['y_val']);
         } elseif ($r['real_val'] !== null && $r['real_val'] !== '') {
             $realisasi = (float)$r['real_val'];
         }
 
-        $cap_tw = ($realisasi !== null && $alokasi > 0) ? $realisasi / $alokasi * 100 : null;
-        $cap_pk = ($realisasi !== null && $target  > 0) ? $realisasi / $target  * 100 : null;
+        $cap_tw = capaianPersen($realisasi, $alokasi);
+        $cap_pk = capaianPersen($realisasi, $target);
 
         $batas = '';
         if (!empty($r['batas_waktu']) && $r['batas_waktu'] !== '0000-00-00') {

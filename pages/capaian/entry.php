@@ -88,7 +88,10 @@ function val($entry, $key, $default = '') {
 }
 function numval($entry, $key) {
     $v = $entry[$key] ?? '';
-    return $v !== '' && $v !== null ? $v : '';
+    if ($v === '' || $v === null) return '';
+    // X dan Y (jumlah publikasi) adalah bilangan bulat: "3.0000" dari database ditampilkan "3"
+    if (preg_match('/^[xy]_tw\d$/', $key) && (float)$v == floor((float)$v)) return (string)(int)$v;
+    return $v;
 }
 ?>
 <!DOCTYPE html>
@@ -331,7 +334,8 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
                     <?php
                         $x = (float)($entry["x_tw".($i+1)] ?? 0);
                         $y = (float)($entry["y_tw".($i+1)] ?? 0);
-                        echo $y > 0 ? number_format($x/$y*100, 2).'%' : '—';
+                        $diisi = ($entry["x_tw".($i+1)] ?? null) !== null && ($entry["y_tw".($i+1)] ?? null) !== null;
+                        echo $y > 0 ? number_format($x/$y*100, 2).'%' : ($diisi && $x == 0 ? '0.00%' : '—');   // X=0 dan Y=0 → 0%
                     ?>
                 </div>
             </div>
@@ -639,7 +643,8 @@ function hitungCapaian(twIdx) {
     const y = parseFloat(document.getElementById(`y_tw${twIdx}`)?.value) || 0;
     const cap = document.getElementById(`cap_tw${twIdx}`);
     if (cap) {
-        cap.textContent = y > 0 ? (x / y * 100).toFixed(2) + '%' : '—';
+        const diisi = document.getElementById(`x_tw${twIdx}`)?.value !== '' && document.getElementById(`y_tw${twIdx}`)?.value !== '';
+        cap.textContent = y > 0 ? (x / y * 100).toFixed(2) + '%' : (diisi && x === 0 ? '0.00%' : '—');   // X=0 dan Y=0 → 0%
     }
 }
 
