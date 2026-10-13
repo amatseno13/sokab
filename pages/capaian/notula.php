@@ -280,6 +280,8 @@ tr:hover td{background:#fffaf5}
         <div class="btn-row">
             <button class="btn btn-primary" id="btn-gen" onclick="generateNotula()">📄 Generate &amp; Unduh Notula (.docx)</button>
             <button class="btn btn-ghost" id="btn-xlsx" onclick="exportKertasKerja()">📗 Export Kertas Kerja (.xlsx)</button>
+            <button class="btn btn-ghost" id="btn-dsum-semua" onclick="unduhDokumenSumberSemua(false)">Dokumen Sumber — Semua IKU</button>
+            <button class="btn btn-ghost" id="btn-dsum-tl-semua" onclick="unduhDokumenSumberSemua(true)">Dokumen Sumber TW Sebelumnya — Semua IKU</button>
             <span id="gen-status" style="font-size:.82rem;color:#aaa"></span>
         </div>
     </div>
@@ -708,6 +710,42 @@ async function generateNotula() {
         btn.disabled = false;
         setTimeout(() => st.textContent = '', 6000);
     }
+}
+
+// Dokumen sumber gabungan semua IKU (Word/PDF). tl=true → tindak lanjut: pakai triwulan SEBELUM yang dipilih.
+function periodeSebelumnya() {
+    const kini = periodeIdAktif();
+    for (const [th, daftar] of Object.entries(PERIODE)) {
+        const t = daftar.find(p => p.id === kini);
+        if (!t) continue;
+        const urut = ['I', 'II', 'III', 'IV'], i = urut.indexOf(t.tw);
+        const tahun = i === 0 ? String(+th - 1) : th;
+        return ((PERIODE[tahun] || []).find(p => p.tw === urut[(i + 3) % 4]) || {}).id || null;
+    }
+    return null;
+}
+
+async function unduhDokumenSumberSemua(tl) {
+    const pid = tl ? periodeSebelumnya() : periodeIdAktif();
+    if (!pid) { toast(tl ? 'Triwulan sebelumnya tidak ditemukan.' : 'Pilih triwulan dulu.', false); return; }
+    const format = typeof pilihFormat === 'function' ? await pilihFormat() : 'word';
+    if (!format) return;
+    const btn = document.getElementById(tl ? 'btn-dsum-tl-semua' : 'btn-dsum-semua');
+    const teks = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Menyusun… (bisa beberapa saat)';
+    try {
+        const res = await fetch(`${API}?action=generate_dokumen_sumber_semua&periode_id=${pid}${tl ? '&mode=tl' : ''}${format === 'pdf' ? '&format=pdf' : ''}`);
+        if ((res.headers.get('Content-Type') || '').includes('application/json')) throw new Error((await res.json()).message || 'Gagal membuat dokumen');
+        const blob = await res.blob();
+        const nama = ((res.headers.get('Content-Disposition') || '').match(/filename="(.+?)"/) || [])[1] || 'Bukti_Dokumen_Sumber_Semua_IKU';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = nama;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
+        let info = {}; try { info = JSON.parse(res.headers.get('X-Dokumen-Sumber-Info') || '{}'); } catch (e) {}
+        toast(`Terunduh: ${nama}${info.iku ? ` (${info.iku} IKU, ${info.foto_terpasang || 0} foto)` : ''}`);
+    } catch (e) { toast(e.message, false); }
+    finally { btn.disabled = false; btn.textContent = teks; }
 }
 
 async function exportKertasKerja() {

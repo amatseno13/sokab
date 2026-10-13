@@ -327,6 +327,14 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
         }
     };
 
+    // Dokumen gabungan: $data['gabungan'] = daftar payload (satu per IKU), tiap IKU mulai di halaman baru.
+    // Tanpa 'gabungan' = satu IKU saja (perilaku lama, tidak berubah).
+    foreach ($data['gabungan'] ?? [$data] as $nomorDok => $data) {
+    if ($nomorDok > 0) {
+        $nsW = DS_W_NS;
+        dsSisip($doc, $sectPr, '<w:p xmlns:w="' . $nsW . '"><w:r><w:br w:type="page"/></w:r></w:p>');
+    }
+
     // ── Dokumen khusus: Bukti Dokumen Sumber Solusi dari Kendala ──
     if (!empty($data['hanya_solusi'])) {
         dsSisip($doc, $sectPr, dsP('Bukti Dokumen Sumber Solusi Dari Kendala', ['bold' => true, 'size' => 14, 'align' => 'center', 'space_after' => 2]));
@@ -351,20 +359,22 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
             dsSisip($doc, $sectPr, dsP(($it['no'] ? $it['no'] . '. ' : '') . $it['teks'], ['size' => 11, 'align' => 'both', 'space_after' => 4]));
             if ($it['idx']) $pasangFoto($data['solusi_foto'][$it['idx']] ?? []);
         }
-        goto selesai;
+        continue;
     }
 
     // ── Dokumen Tindak Lanjut TW sebelumnya: hanya judul, indikator, poin RTL beserta dokumentasinya ──
     if (!empty($data['mode_tl'])) {
-        dsSisip($doc, $sectPr, dsP('Bukti Dokumen Sumber Tindak Lanjut TW ' . ($data['triwulan'] ?? '') . ' ' . ($data['tahun'] ?? ''), ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 2]));
-        dsSisip($doc, $sectPr, dsP((string)($data['satker'] ?? ''), ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 8]));
+        if (empty($data['tanpa_judul'])) {   // dokumen gabungan: judul cukup di halaman pertama
+            dsSisip($doc, $sectPr, dsP('Bukti Dokumen Sumber Tindak Lanjut TW ' . ($data['triwulan'] ?? '') . ' ' . ($data['tahun'] ?? ''), ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 2]));
+            dsSisip($doc, $sectPr, dsP((string)($data['satker'] ?? ''), ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 8]));
+        }
         dsSisip($doc, $sectPr, dsP(trim(($data['kode'] ?? '') . ' ' . ($data['nama'] ?? '')), ['bold' => true, 'size' => 12, 'align' => 'center', 'space_after' => 12]));
         foreach (dsSusunBukti($data['ro_list'] ?? [], true) as [$teks, $foto, $judul, $indent]) {
             if ($judul) dsSisip($doc, $sectPr, dsP($teks, ['bold' => true, 'size' => 11, 'space_before' => 4, 'space_after' => 4]));
             else { $roTerisi++; dsSisip($doc, $sectPr, dsP($teks, ['space_after' => 6, 'indent_cm' => $indent])); }
             $pasangFoto($foto);
         }
-        goto selesai;
+        continue;
     }
 
 
@@ -373,8 +383,10 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
     $tahun  = (string)($data['tahun'] ?? date('Y'));
 
     // ── Judul ──
-    dsSisip($doc, $sectPr, dsP("Bukti Dokumen Sumber TW $tw $tahun", ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 2]));
-    dsSisip($doc, $sectPr, dsP($satker, ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 12]));
+    if (empty($data['tanpa_judul'])) {   // dokumen gabungan: judul cukup di halaman pertama
+        dsSisip($doc, $sectPr, dsP("Bukti Dokumen Sumber TW $tw $tahun", ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 2]));
+        dsSisip($doc, $sectPr, dsP($satker, ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 12]));
+    }
 
     // ── Tabel indikator ──
     // Header dua baris: No/Indikator/Target PK/Capaian Terhadap Target PK menyatu
@@ -486,7 +498,8 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
         $pasangFoto($fotoList);
     }
 
-    selesai:
+    }   // akhir foreach dokumen
+
     // Tulis relationship baru ke document.xml.rels
     if ($newRels !== '') {
         $frag = $relsDoc->createDocumentFragment();

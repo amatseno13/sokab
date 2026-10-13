@@ -113,9 +113,12 @@ class PdfDokumenSumber extends FPDF {
     function bersihkan(): void { foreach ($this->tmp as $f) @unlink($f); }
 }
 
-function buatDokumenSumberPdf(array $d, ?array &$info = null): string {
+function buatDokumenSumberPdf(array $dAsal, ?array &$info = null): string {
     $p = new PdfDokumenSumber();
     $roTerisi = 0;
+    // Dokumen gabungan: $dAsal['gabungan'] = daftar payload (satu per IKU), tiap IKU mulai di halaman baru
+    foreach ($dAsal['gabungan'] ?? [$dAsal] as $nomorDok => $d) {
+    if ($nomorDok > 0) $p->AddPage();
     $tl = !empty($d['mode_tl']);
 
     if (!empty($d['hanya_solusi'])) {
@@ -142,8 +145,10 @@ function buatDokumenSumberPdf(array $d, ?array &$info = null): string {
         }
     } elseif ($tl) {
         // Tindak Lanjut TW sebelumnya: hanya judul, indikator, poin RTL beserta dokumentasinya
-        $p->para('Bukti Dokumen Sumber Tindak Lanjut TW ' . ($d['triwulan'] ?? '') . ' ' . ($d['tahun'] ?? ''), 13, true, 'C', 0, 0.5);
-        $p->para((string)($d['satker'] ?? ''), 13, true, 'C', 0, 3);
+        if (empty($d['tanpa_judul'])) {   // dokumen gabungan: judul cukup di halaman pertama
+            $p->para('Bukti Dokumen Sumber Tindak Lanjut TW ' . ($d['triwulan'] ?? '') . ' ' . ($d['tahun'] ?? ''), 13, true, 'C', 0, 0.5);
+            $p->para((string)($d['satker'] ?? ''), 13, true, 'C', 0, 3);
+        }
         $p->para(trim(($d['kode'] ?? '') . ' ' . ($d['nama'] ?? '')), 12, true, 'C', 0, 5);
         foreach (dsSusunBukti($d['ro_list'] ?? [], true) as [$teks, $foto, $judul, $indent]) {
             if (!$judul) $roTerisi++;
@@ -152,8 +157,10 @@ function buatDokumenSumberPdf(array $d, ?array &$info = null): string {
         }
     } else {
         // ── Judul ──
-        $p->para('Bukti Dokumen Sumber TW ' . ($d['triwulan'] ?? '') . ' ' . ($d['tahun'] ?? ''), 13, true, 'C', 0, 0.5);
-        $p->para((string)($d['satker'] ?? ''), 13, true, 'C', 0, 5);
+        if (empty($d['tanpa_judul'])) {   // dokumen gabungan: judul cukup di halaman pertama
+            $p->para('Bukti Dokumen Sumber TW ' . ($d['triwulan'] ?? '') . ' ' . ($d['tahun'] ?? ''), 13, true, 'C', 0, 0.5);
+            $p->para((string)($d['satker'] ?? ''), 13, true, 'C', 0, 5);
+        }
 
         // ── Tabel indikator (lebar mm; sama proporsinya dengan versi Word) ──
         $k = 180 / 16.8;
@@ -221,6 +228,8 @@ function buatDokumenSumberPdf(array $d, ?array &$info = null): string {
             $p->foto($foto);
         }
     }
+
+    }   // akhir foreach dokumen
 
     $info = ['ro_terisi' => $roTerisi, 'foto_terpasang' => $p->fotoOk, 'foto_gagal' => $p->fotoGagal];
     $out = $p->Output('S');

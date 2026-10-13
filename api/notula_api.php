@@ -175,6 +175,207 @@ function tulisMetaSementara(array $in): string {
 // ══════════════════════════════════════════════════════════
 // ROUTER
 // ══════════════════════════════════════════════════════════
+/**
+ * Susun payload dokumen sumber untuk SATU IKU di SATU periode (dipakai dokumen per IKU dan dokumen gabungan).
+ * $mode 'tl' = Tindak Lanjut TW sebelumnya; $jenis 'solusi' = Bukti Solusi dari Kendala.
+ * @return array [payload, baris ck_periode, apakah jenis solusi]
+ */
+function susunPayloadDokumenSumber(PDO $db, int $pid, string $kode, string $mode = '', string $jenis = ''): array {
+    $stmt = $db->prepare("SELECT * FROM ck_periode WHERE id = ?");
+    $stmt->execute([$pid]);
+    $periode = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$periode) json_err('Periode tidak ditemukan');
+
+    $tw     = $periode['triwulan'];
+    $tw_idx = array_search($tw, ['I', 'II', 'III', 'IV'], true) + 1;
+
+    $stmt = $db->prepare("
+        SELECT m.*, e.x_tw{$tw_idx} AS x_val, e.y_tw{$tw_idx} AS y_val,
+               e.realisasi_tw{$tw_idx} AS real_val,
+               e.kendala, e.solusi, e.rtl, e.pic, e.batas_waktu
+        FROM ck_iku_master m
+        LEFT JOIN ck_entry_iku e ON e.iku_kode = m.kode AND e.periode_id = :pid
+        WHERE m.kode = :kode
+    ");
+    $stmt->execute([':pid' => $pid, ':kode' => $kode]);
+    $r = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$r) json_err('IKU tidak ditemukan');
+
+    $fmt = function ($v) {
+        if ($v === null || $v === '') return '';
+        $s = number_format((float)$v, 2, '.', '');
+        return rtrim(rtrim($s, '0'), '.') ?: '0';
+    };
+
+    $target  = (float)$r['target'];
+    $alokasi = (float)$r["alokasi_tw{$tw_idx}"];
+    $realisasi = null;
+    if ($r['jenis_satuan'] === '%' && (int)$r['has_xy'] === 1) {
+        if ($r['x_val'] !== null && $r['y_val'] !== null && (float)$r['y_val'] > 0) {
+            $realisasi = (float)$r['x_val'] / (float)$r['y_val'] * 100;
+        }
+    } elseif ($r['real_val'] !== null && $r['real_val'] !== '') {
+        $realisasi = (float)$r['real_val'];
+    }
+    $cap_tw = ($realisasi !== null && $alokasi > 0) ? $realisasi / $alokasi * 100 : null;
+    $cap_pk = ($realisasi !== null && $target  > 0) ? $realisasi / $target  * 100 : null;
+
+    $batas = '';
+    if (!empty($r['batas_waktu']) && $r['batas_waktu'] !== '0000-00-00') {
+        $bln = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+        $ts = strtotime($r['batas_waktu']);
+        $batas = date('j', $ts) . ' ' . $bln[(int)date('n', $ts)] . ' ' . date('Y', $ts);
+    }
+
+    // RO + narasi + foto milik periode ini
+    $stmt = $db->prepare("
+        SELECT rm.id, rm.nama_ro, re.narasi
+        FROM ck_ro_master rm
+        LEFT JOIN ck_entry_ro re ON re.ro_master_id = rm.id AND re.periode_id = ?
+        WHERE rm.iku_kode = ?
+        ORDER BY rm.ro_order
+    ");
+    $stmt->execute([$pid, $kode]);
+    $ros = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $stmt = $db->prepare("
+        SELECT ro_master_id, file_path, keterangan
+        FROM ck_ro_bukti_foto
+        WHERE periode_id = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id IN (
+            SELECT id FROM ck_ro_master WHERE iku_kode = ?
+        )
+        ORDER BY ro_master_id, urutan, id
+    ");
+    $stmt->execute([$pid, $kode]);
+    $foto_per_ro = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
+        $foto_per_ro[$f['ro_master_id']][] = [
+            'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
+            'keterangan' => $f['keterangan'],
+        ];
+    }
+
+    $ro_list = [];
+    // mode=tl: periode ini adalah TW sebelumnya → bukti dikelompokkan per poin RTL
+    // (foto disimpan dengan ro_master_id = -nomor poin), bukan per RO.
+    if (($mode ?? '') === 'tl') {
+        $stmt = $db->prepare("SELECT file_path, keterangan, ro_master_id FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id BETWEEN -999 AND -1 ORDER BY urutan, id");
+        $stmt->execute([$pid, $kode]);
+        $foto_poin = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
+            $foto_poin[-$f['ro_master_id']][] = [
+                'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
+                'keterangan' => $f['keterangan'],
+            ];
+        }
+        $ros = [];
+        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999999 AND -1");
+        $stmt->execute([$pid, $kode]);
+        $narasi_poin = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        // Kunci narasi per IKU = -(row_order*1000 + poin); kunci lama (-poin) cadangan (lihat entry.php)
+        $stmt = $db->prepare("SELECT row_order FROM ck_iku_master WHERE kode = ?");
+        $stmt->execute([$kode]);
+        $kunci_iku = (int)$stmt->fetchColumn() * 1000;
+        // Baris RTL tanpa nomor = subjudul (kegiatan); foto/narasi terikat urutan poin bernomor (idx)
+        foreach (dsParsePoin($r['rtl']) as $it) {
+            if ($it['judul']) { $ro_list[] = ['nama_ro' => '', 'narasi' => $it['teks'], 'foto' => [], 'judul' => true]; continue; }
+            $tambahan = trim((string)($narasi_poin[-$it['idx'] - $kunci_iku] ?? $narasi_poin[-$it['idx']] ?? ''));
+            $ro_list[] = ['nama_ro' => '', 'narasi' => $it['no'] . '. ' . $it['teks'] . ($tambahan !== '' ? ': ' . $tambahan : ''), 'foto' => $foto_poin[$it['idx']] ?? []];
+        }
+    }
+    // Uraian kegiatan per RO (manual, opsional): Kegiatan → Sub Kegiatan → Tahapan (ck_uraian_node).
+    // Diratakan berurutan dengan nomor: kegiatan "1." · sub "1.1" · tahapan "1.a" / "1.1.a".
+    // Tabel/kolom mungkin belum ada (sql/ck_uraian_node.sql) → bagian ini dilewati.
+    $uraian_per_ro = [];
+    if (($mode ?? '') !== 'tl') {
+        try {
+            $stmt = $db->prepare("SELECT id, ro_master_id, parent_id, tipe, narasi FROM ck_uraian_node WHERE periode_id = ? AND iku_kode = ? ORDER BY urutan, id");
+            $stmt->execute([$pid, $kode]);
+            $anak = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $n) $anak[(int)$n['ro_master_id']][(int)$n['parent_id']][] = $n;
+
+            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id BETWEEN -19999999 AND -10000000 ORDER BY urutan, id");
+            $stmt->execute([$pid, $kode]);
+            $foto_node = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                $foto_node[-$f['ro_master_id'] - 10000000][] = [
+                    'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
+                    'keterangan' => $f['keterangan'],
+                ];
+            }
+
+            $ratakan = function (array $peta, int $parent, string $awalan, int $level, array &$out) use (&$ratakan, $foto_node) {
+                $s = 0; $t = 0;
+                foreach ($peta[$parent] ?? [] as $n) {
+                    if ($n['tipe'] === 'sub') $nomor = $awalan . ($awalan === '' ? '' : '.') . (++$s);
+                    elseif ($n['tipe'] === 'tahap') $nomor = $awalan . ($awalan === '' ? '' : '.') . chr(97 + $t++ % 26);
+                    else $nomor = $awalan . ($awalan === '' ? '' : '.') . (++$s) ; // kegiatan (akar)
+                    $out[] = ['nomor' => $nomor, 'level' => $level, 'narasi' => (string)$n['narasi'], 'foto' => $foto_node[(int)$n['id']] ?? []];
+                    $ratakan($peta, (int)$n['id'], $nomor, $level + 1, $out);
+                }
+            };
+            foreach ($anak as $ro_id => $peta) {
+                $out = [];
+                $ratakan($peta, 0, '', 1, $out);
+                $uraian_per_ro[$ro_id] = $out;
+            }
+        } catch (PDOException $e) { /* migrasi belum dijalankan */ }
+    }
+
+    foreach ($ros as $ro) {
+        $nama = trim(preg_replace('/^\d+\s+[A-Z]{3}\s+\w+\.\s*/', '', $ro['nama_ro']));
+        $ro_list[] = [
+            'nama_ro' => $nama !== '' ? $nama : $ro['nama_ro'],
+            'narasi'  => (string)($ro['narasi'] ?? ''),
+            'foto'    => $foto_per_ro[$ro['id']] ?? [],
+            'uraian'  => $uraian_per_ro[$ro['id']] ?? [],
+        ];
+    }
+
+    $payload = [
+        'satker'       => 'BPS Kota Bima',
+        'triwulan'     => $tw,
+        'tahun'        => (int)$periode['tahun'],
+        'kode'         => $r['kode'],
+        'nama'         => $r['nama'],
+        'sasaran_nama' => (string)($r['sasaran_nama'] ?? ''),
+        'target_pk'    => $fmt($target),
+        'satuan'       => (string)$r['satuan'],
+        'alokasi_tw'   => $fmt($alokasi),
+        'real_tw'      => $realisasi === null ? '' : $fmt($realisasi),
+        'capaian_tw'   => $cap_tw === null ? '' : $fmt($cap_tw),
+        'capaian_pk'   => $cap_pk === null ? '' : $fmt($cap_pk),
+        'kendala'      => (string)$r['kendala'],
+        'solusi'       => (string)$r['solusi'],
+        'rtl'          => (string)$r['rtl'],
+        'pic'          => (string)($r['pic'] ?: $r['pic_default']),
+        'batas'        => $batas,
+        'ro_list'      => $ro_list,
+    ];
+
+    if (($mode ?? '') === 'tl') $payload['mode_tl'] = true;
+
+    // jenis=solusi: dokumen terpisah "Bukti Dokumen Sumber Solusi Dari Kendala".
+    // Foto per poin solusi disimpan dengan ro_master_id = -(20000000 + nomor poin).
+    $jenis_solusi = ($jenis ?? '') === 'solusi';
+    if ($jenis_solusi) {
+        $payload['hanya_solusi'] = true;
+        $payload['solusi_foto']  = [];
+        try {
+            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id <= -20000000 ORDER BY urutan, id");
+            $stmt->execute([$pid, $kode]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
+                $payload['solusi_foto'][-$f['ro_master_id'] - 20000000][] = [
+                    'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
+                    'keterangan' => $f['keterangan'],
+                ];
+            }
+        } catch (PDOException $e) { /* kolom iku_kode belum ada */ }
+    }
+
+    return [$payload, $periode, $jenis_solusi];
+}
+
 switch ($act) {
 
 // ── Cek lingkungan server ────────────────────────────────
@@ -540,197 +741,8 @@ case 'generate_dokumen_sumber':
 
     bersihkanTmp();
 
-    $stmt = $db->prepare("SELECT * FROM ck_periode WHERE id = ?");
-    $stmt->execute([$pid]);
-    $periode = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$periode) json_err('Periode tidak ditemukan');
-
-    $tw     = $periode['triwulan'];
-    $tw_idx = array_search($tw, ['I', 'II', 'III', 'IV'], true) + 1;
-
-    $stmt = $db->prepare("
-        SELECT m.*, e.x_tw{$tw_idx} AS x_val, e.y_tw{$tw_idx} AS y_val,
-               e.realisasi_tw{$tw_idx} AS real_val,
-               e.kendala, e.solusi, e.rtl, e.pic, e.batas_waktu
-        FROM ck_iku_master m
-        LEFT JOIN ck_entry_iku e ON e.iku_kode = m.kode AND e.periode_id = :pid
-        WHERE m.kode = :kode
-    ");
-    $stmt->execute([':pid' => $pid, ':kode' => $kode]);
-    $r = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$r) json_err('IKU tidak ditemukan');
-
-    $fmt = function ($v) {
-        if ($v === null || $v === '') return '';
-        $s = number_format((float)$v, 2, '.', '');
-        return rtrim(rtrim($s, '0'), '.') ?: '0';
-    };
-
-    $target  = (float)$r['target'];
-    $alokasi = (float)$r["alokasi_tw{$tw_idx}"];
-    $realisasi = null;
-    if ($r['jenis_satuan'] === '%' && (int)$r['has_xy'] === 1) {
-        if ($r['x_val'] !== null && $r['y_val'] !== null && (float)$r['y_val'] > 0) {
-            $realisasi = (float)$r['x_val'] / (float)$r['y_val'] * 100;
-        }
-    } elseif ($r['real_val'] !== null && $r['real_val'] !== '') {
-        $realisasi = (float)$r['real_val'];
-    }
-    $cap_tw = ($realisasi !== null && $alokasi > 0) ? $realisasi / $alokasi * 100 : null;
-    $cap_pk = ($realisasi !== null && $target  > 0) ? $realisasi / $target  * 100 : null;
-
-    $batas = '';
-    if (!empty($r['batas_waktu']) && $r['batas_waktu'] !== '0000-00-00') {
-        $bln = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
-        $ts = strtotime($r['batas_waktu']);
-        $batas = date('j', $ts) . ' ' . $bln[(int)date('n', $ts)] . ' ' . date('Y', $ts);
-    }
-
-    // RO + narasi + foto milik periode ini
-    $stmt = $db->prepare("
-        SELECT rm.id, rm.nama_ro, re.narasi
-        FROM ck_ro_master rm
-        LEFT JOIN ck_entry_ro re ON re.ro_master_id = rm.id AND re.periode_id = ?
-        WHERE rm.iku_kode = ?
-        ORDER BY rm.ro_order
-    ");
-    $stmt->execute([$pid, $kode]);
-    $ros = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    $stmt = $db->prepare("
-        SELECT ro_master_id, file_path, keterangan
-        FROM ck_ro_bukti_foto
-        WHERE periode_id = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id IN (
-            SELECT id FROM ck_ro_master WHERE iku_kode = ?
-        )
-        ORDER BY ro_master_id, urutan, id
-    ");
-    $stmt->execute([$pid, $kode]);
-    $foto_per_ro = [];
-    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
-        $foto_per_ro[$f['ro_master_id']][] = [
-            'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
-            'keterangan' => $f['keterangan'],
-        ];
-    }
-
-    $ro_list = [];
-    // mode=tl: periode ini adalah TW sebelumnya → bukti dikelompokkan per poin RTL
-    // (foto disimpan dengan ro_master_id = -nomor poin), bukan per RO.
-    if (($_GET['mode'] ?? '') === 'tl') {
-        $stmt = $db->prepare("SELECT file_path, keterangan, ro_master_id FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id BETWEEN -999 AND -1 ORDER BY urutan, id");
-        $stmt->execute([$pid, $kode]);
-        $foto_poin = [];
-        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
-            $foto_poin[-$f['ro_master_id']][] = [
-                'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
-                'keterangan' => $f['keterangan'],
-            ];
-        }
-        $ros = [];
-        $stmt = $db->prepare("SELECT ro_master_id, narasi FROM ck_entry_ro WHERE periode_id = ? AND iku_kode = ? AND ro_master_id BETWEEN -999999 AND -1");
-        $stmt->execute([$pid, $kode]);
-        $narasi_poin = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-        // Kunci narasi per IKU = -(row_order*1000 + poin); kunci lama (-poin) cadangan (lihat entry.php)
-        $stmt = $db->prepare("SELECT row_order FROM ck_iku_master WHERE kode = ?");
-        $stmt->execute([$kode]);
-        $kunci_iku = (int)$stmt->fetchColumn() * 1000;
-        // Baris RTL tanpa nomor = subjudul (kegiatan); foto/narasi terikat urutan poin bernomor (idx)
-        foreach (dsParsePoin($r['rtl']) as $it) {
-            if ($it['judul']) { $ro_list[] = ['nama_ro' => '', 'narasi' => $it['teks'], 'foto' => [], 'judul' => true]; continue; }
-            $tambahan = trim((string)($narasi_poin[-$it['idx'] - $kunci_iku] ?? $narasi_poin[-$it['idx']] ?? ''));
-            $ro_list[] = ['nama_ro' => '', 'narasi' => $it['no'] . '. ' . $it['teks'] . ($tambahan !== '' ? ': ' . $tambahan : ''), 'foto' => $foto_poin[$it['idx']] ?? []];
-        }
-    }
-    // Uraian kegiatan per RO (manual, opsional): Kegiatan → Sub Kegiatan → Tahapan (ck_uraian_node).
-    // Diratakan berurutan dengan nomor: kegiatan "1." · sub "1.1" · tahapan "1.a" / "1.1.a".
-    // Tabel/kolom mungkin belum ada (sql/ck_uraian_node.sql) → bagian ini dilewati.
-    $uraian_per_ro = [];
-    if (($_GET['mode'] ?? '') !== 'tl') {
-        try {
-            $stmt = $db->prepare("SELECT id, ro_master_id, parent_id, tipe, narasi FROM ck_uraian_node WHERE periode_id = ? AND iku_kode = ? ORDER BY urutan, id");
-            $stmt->execute([$pid, $kode]);
-            $anak = [];
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $n) $anak[(int)$n['ro_master_id']][(int)$n['parent_id']][] = $n;
-
-            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id BETWEEN -19999999 AND -10000000 ORDER BY urutan, id");
-            $stmt->execute([$pid, $kode]);
-            $foto_node = [];
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
-                $foto_node[-$f['ro_master_id'] - 10000000][] = [
-                    'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
-                    'keterangan' => $f['keterangan'],
-                ];
-            }
-
-            $ratakan = function (array $peta, int $parent, string $awalan, int $level, array &$out) use (&$ratakan, $foto_node) {
-                $s = 0; $t = 0;
-                foreach ($peta[$parent] ?? [] as $n) {
-                    if ($n['tipe'] === 'sub') $nomor = $awalan . ($awalan === '' ? '' : '.') . (++$s);
-                    elseif ($n['tipe'] === 'tahap') $nomor = $awalan . ($awalan === '' ? '' : '.') . chr(97 + $t++ % 26);
-                    else $nomor = $awalan . ($awalan === '' ? '' : '.') . (++$s) ; // kegiatan (akar)
-                    $out[] = ['nomor' => $nomor, 'level' => $level, 'narasi' => (string)$n['narasi'], 'foto' => $foto_node[(int)$n['id']] ?? []];
-                    $ratakan($peta, (int)$n['id'], $nomor, $level + 1, $out);
-                }
-            };
-            foreach ($anak as $ro_id => $peta) {
-                $out = [];
-                $ratakan($peta, 0, '', 1, $out);
-                $uraian_per_ro[$ro_id] = $out;
-            }
-        } catch (PDOException $e) { /* migrasi belum dijalankan */ }
-    }
-
-    foreach ($ros as $ro) {
-        $nama = trim(preg_replace('/^\d+\s+[A-Z]{3}\s+\w+\.\s*/', '', $ro['nama_ro']));
-        $ro_list[] = [
-            'nama_ro' => $nama !== '' ? $nama : $ro['nama_ro'],
-            'narasi'  => (string)($ro['narasi'] ?? ''),
-            'foto'    => $foto_per_ro[$ro['id']] ?? [],
-            'uraian'  => $uraian_per_ro[$ro['id']] ?? [],
-        ];
-    }
-
-    $payload = [
-        'satker'       => 'BPS Kota Bima',
-        'triwulan'     => $tw,
-        'tahun'        => (int)$periode['tahun'],
-        'kode'         => $r['kode'],
-        'nama'         => $r['nama'],
-        'sasaran_nama' => (string)($r['sasaran_nama'] ?? ''),
-        'target_pk'    => $fmt($target),
-        'satuan'       => (string)$r['satuan'],
-        'alokasi_tw'   => $fmt($alokasi),
-        'real_tw'      => $realisasi === null ? '' : $fmt($realisasi),
-        'capaian_tw'   => $cap_tw === null ? '' : $fmt($cap_tw),
-        'capaian_pk'   => $cap_pk === null ? '' : $fmt($cap_pk),
-        'kendala'      => (string)$r['kendala'],
-        'solusi'       => (string)$r['solusi'],
-        'rtl'          => (string)$r['rtl'],
-        'pic'          => (string)($r['pic'] ?: $r['pic_default']),
-        'batas'        => $batas,
-        'ro_list'      => $ro_list,
-    ];
-
-    if (($_GET['mode'] ?? '') === 'tl') $payload['mode_tl'] = true;
-
-    // jenis=solusi: dokumen terpisah "Bukti Dokumen Sumber Solusi Dari Kendala".
-    // Foto per poin solusi disimpan dengan ro_master_id = -(20000000 + nomor poin).
-    $jenis_solusi = ($_GET['jenis'] ?? '') === 'solusi';
-    if ($jenis_solusi) {
-        $payload['hanya_solusi'] = true;
-        $payload['solusi_foto']  = [];
-        try {
-            $stmt = $db->prepare("SELECT ro_master_id, file_path, keterangan FROM ck_ro_bukti_foto WHERE periode_id = ? AND iku_kode = ? AND file_path NOT LIKE '%.pdf' AND ro_master_id <= -20000000 ORDER BY urutan, id");
-            $stmt->execute([$pid, $kode]);
-            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $f) {
-                $payload['solusi_foto'][-$f['ro_master_id'] - 20000000][] = [
-                    'path'       => realpath(__DIR__ . '/../' . $f['file_path']) ?: (__DIR__ . '/../' . $f['file_path']),
-                    'keterangan' => $f['keterangan'],
-                ];
-            }
-        } catch (PDOException $e) { /* kolom iku_kode belum ada */ }
-    }
+    [$payload, $periode, $jenis_solusi] = susunPayloadDokumenSumber($db, $pid, $kode, $_GET['mode'] ?? '', $_GET['jenis'] ?? '');
+    $tw = $periode['triwulan'];
 
     // format=pdf: PDF disusun langsung dari data yang sama dengan Word (includes/pdf_dokumen_sumber.php)
     if (($_GET['format'] ?? '') === 'pdf') {
@@ -770,6 +782,77 @@ case 'generate_dokumen_sumber':
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     header('Content-Length: ' . filesize($out_path));
     header('X-Dokumen-Sumber-Info: ' . json_encode([
+        'ro_terisi'      => $info['ro_terisi'] ?? 0,
+        'foto_terpasang' => $info['foto_terpasang'] ?? 0,
+        'foto_gagal'     => $info['foto_gagal'] ?? [],
+    ]));
+    header('Access-Control-Expose-Headers: X-Dokumen-Sumber-Info');
+    header('Cache-Control: no-store');
+    readfile($out_path);
+    @unlink($out_path);
+    exit;
+
+// ── 4b. DOKUMEN SUMBER GABUNGAN — semua IKU dalam satu dokumen ──
+// Memakai penyusun payload yang sama dengan dokumen per IKU (susunPayloadDokumenSumber); per IKU tidak berubah.
+// mode=tl → Tindak Lanjut TW sebelumnya (hanya IKU yang punya RTL). format=pdf → PDF, selain itu Word.
+case 'generate_dokumen_sumber_semua':
+    $pid  = (int)($_GET['periode_id'] ?? 0);
+    $mode = ($_GET['mode'] ?? '') === 'tl' ? 'tl' : '';
+    if (!$pid) json_err('periode_id required');
+
+    if (!class_exists('ZipArchive')) json_err('Ekstensi PHP "zip" tidak aktif.', 500);
+    if (!class_exists('DOMDocument')) json_err('Ekstensi PHP "xml/dom" tidak aktif.', 500);
+    if (!file_exists(DOKSUM_TEMPLATE_KOSONG)) json_err('Template blank_dokumen_sumber.docx tidak ditemukan.', 500);
+    if ($m = masalahTmp()) json_err($m, 500);
+    bersihkanTmp();
+    @set_time_limit(300);
+    @ini_set('memory_limit', '512M');
+
+    $daftar = []; $periode = null;
+    foreach ($db->query("SELECT kode FROM ck_iku_master WHERE jenis_iku = 'IKU' ORDER BY row_order")->fetchAll(PDO::FETCH_COLUMN) as $k) {
+        [$pl, $periode] = susunPayloadDokumenSumber($db, $pid, $k, $mode);
+        if ($mode === 'tl' && trim((string)$pl['rtl']) === '') continue;   // tak ada RTL → tak ada yang dibuktikan
+        $daftar[] = $pl;
+    }
+    if (!$daftar) json_err($mode === 'tl' ? 'Tidak ada IKU yang punya Rencana Tindak Lanjut di triwulan ini.' : 'Tidak ada IKU.');
+    foreach ($daftar as $i => &$pl) if ($i > 0) $pl['tanpa_judul'] = true;   // judul dokumen cukup di halaman pertama
+    unset($pl);
+    $payload = $daftar[0];
+    $payload['gabungan'] = $daftar;
+    $tw = $periode['triwulan'];
+    $dasar = ($mode === 'tl' ? 'Bukti_Dokumen_Sumber_Tindak_Lanjut_Semua_IKU_' : 'Bukti_Dokumen_Sumber_Semua_IKU_') . "TW{$tw}_{$periode['tahun']}";
+
+    if (($_GET['format'] ?? '') === 'pdf') {
+        require_once __DIR__ . '/../includes/pdf_dokumen_sumber.php';
+        try {
+            $pdf = buatDokumenSumberPdf($payload, $info_pdf);
+        } catch (Throwable $e) {
+            error_log('[SOKAB dokumen_sumber_semua pdf] ' . $e->getMessage());
+            json_err('Gagal menyusun PDF: ' . $e->getMessage(), 500);
+        }
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: attachment; filename="' . $dasar . '.pdf"');
+        header('Content-Length: ' . strlen($pdf));
+        header('X-Dokumen-Sumber-Info: ' . json_encode($info_pdf + ['iku' => count($daftar)]));
+        header('Access-Control-Expose-Headers: X-Dokumen-Sumber-Info');
+        header('Cache-Control: no-store');
+        echo $pdf;
+        exit;
+    }
+
+    $out_path = NOTULA_TMP . '/dsum_all_' . bin2hex(random_bytes(8)) . '.docx';
+    try {
+        $info = buatDokumenSumberDocx($payload, DOKSUM_TEMPLATE_KOSONG, $out_path);
+    } catch (Throwable $e) {
+        error_log('[SOKAB dokumen_sumber_semua] ' . $e->getMessage());
+        @unlink($out_path);
+        json_err('Gagal menyusun dokumen sumber: ' . $e->getMessage(), 500);
+    }
+    header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    header('Content-Disposition: attachment; filename="' . $dasar . '.docx"');
+    header('Content-Length: ' . filesize($out_path));
+    header('X-Dokumen-Sumber-Info: ' . json_encode([
+        'iku'            => count($daftar),
         'ro_terisi'      => $info['ro_terisi'] ?? 0,
         'foto_terpasang' => $info['foto_terpasang'] ?? 0,
         'foto_gagal'     => $info['foto_gagal'] ?? [],
