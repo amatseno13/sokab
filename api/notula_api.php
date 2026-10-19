@@ -884,6 +884,96 @@ case 'generate_dokumen_sumber_semua':
     @unlink($out_path);
     exit;
 
+// ── 4c. PAKET ZIP — semua dokumen per IKU sekaligus ──
+// Struktur: {tahun}/TW{n}/{kode IKU}/ berisi Dokumen Sumber TW berjalan, Bukti Solusi dari Kendala, dan
+// Dokumen Sumber Tindak Lanjut TW sebelumnya. Memakai penyusun payload yang sama dengan dokumen per IKU.
+// Dokumen tanpa isi (tak ada solusi / tak ada RTL) dilewati. format=pdf → PDF, selain itu Word.
+case 'unduh_paket_dokumen':
+    $pid = (int)($_GET['periode_id'] ?? 0);
+    if (!$pid) json_err('periode_id required');
+    $pdf_fmt = ($_GET['format'] ?? '') === 'pdf';
+
+    if (!class_exists('ZipArchive')) json_err('Ekstensi PHP "zip" tidak aktif.', 500);
+    if (!class_exists('DOMDocument')) json_err('Ekstensi PHP "xml/dom" tidak aktif.', 500);
+    if (!file_exists(DOKSUM_TEMPLATE_KOSONG)) json_err('Template blank_dokumen_sumber.docx tidak ditemukan.', 500);
+    if ($m = masalahTmp()) json_err($m, 500);
+    bersihkanTmp();
+    @set_time_limit(900);
+    @ini_set('memory_limit', '768M');
+    if ($pdf_fmt) require_once __DIR__ . '/../includes/pdf_dokumen_sumber.php';
+
+    // Periode sebelumnya (TW I mundur ke TW IV tahun lalu), sama seperti di halaman Entry
+    $st = $db->prepare("SELECT * FROM ck_periode WHERE id = ?");
+    $st->execute([$pid]);
+    $per = $st->fetch(PDO::FETCH_ASSOC);
+    if (!$per) json_err('Periode tidak ditemukan');
+    $urut = ['I', 'II', 'III', 'IV'];
+    $ix = array_search($per['triwulan'], $urut, true);
+    $st = $db->prepare("SELECT id, triwulan, tahun FROM ck_periode WHERE tahun = ? AND triwulan = ?");
+    $st->execute([$ix === 0 ? (int)$per['tahun'] - 1 : (int)$per['tahun'], $urut[($ix + 3) % 4]]);
+    $per_sblm = $st->fetch(PDO::FETCH_ASSOC) ?: null;
+
+    $ext = $pdf_fmt ? 'pdf' : 'docx';
+    $info_total = ['iku' => 0, 'dokumen' => 0, 'foto_terpasang' => 0, 'foto_gagal' => []];
+    // payload → isi berkas (PDF atau DOCX) dan catat foto
+    $bangun = function (array $payload) use ($pdf_fmt, &$info_total): string {
+        if ($pdf_fmt) {
+            $isi = buatDokumenSumberPdf($payload, $inf);
+        } else {
+            $tmp = NOTULA_TMP . '/paket_' . bin2hex(random_bytes(6)) . '.docx';
+            $inf = buatDokumenSumberDocx($payload, DOKSUM_TEMPLATE_KOSONG, $tmp);
+            $isi = (string)file_get_contents($tmp);
+            @unlink($tmp);
+        }
+        $info_total['foto_terpasang'] += (int)($inf['foto_terpasang'] ?? $inf['fotoOk'] ?? 0);
+        foreach (($inf['foto_gagal'] ?? []) as $g) $info_total['foto_gagal'][] = $g;
+        return $isi;
+    };
+
+    $zip_path = NOTULA_TMP . '/paket_' . bin2hex(random_bytes(8)) . '.zip';
+    $zip = new ZipArchive();
+    if ($zip->open($zip_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) json_err('Gagal membuat berkas ZIP.', 500);
+
+    try {
+        foreach ($db->query("SELECT kode FROM ck_iku_master WHERE jenis_iku = 'IKU' ORDER BY row_order")->fetchAll(PDO::FETCH_COLUMN) as $k) {
+            $folder = (int)$per['tahun'] . '/TW' . $per['triwulan'] . '/' . preg_replace('/[^0-9A-Za-z.]+/', '_', $k) . '/';
+            $n_iku = 0;
+
+            [$pl] = susunPayloadDokumenSumber($db, $pid, $k, '', '');
+            $zip->addFromString($folder . "1 Dokumen Sumber TW{$per['triwulan']}.{$ext}", $bangun($pl)); $n_iku++;
+
+            [$pl] = susunPayloadDokumenSumber($db, $pid, $k, '', 'solusi');
+            if (trim((string)$pl['solusi']) !== '' || !empty($pl['solusi_foto'])) {
+                $zip->addFromString($folder . "2 Bukti Solusi dari Kendala TW{$per['triwulan']}.{$ext}", $bangun($pl)); $n_iku++;
+            }
+
+            if ($per_sblm) {
+                [$pl] = susunPayloadDokumenSumber($db, (int)$per_sblm['id'], $k, 'tl', '');
+                if (trim((string)$pl['rtl']) !== '') {
+                    $zip->addFromString($folder . "3 Dokumen Sumber Tindak Lanjut dari TW{$per_sblm['triwulan']} {$per_sblm['tahun']}.{$ext}", $bangun($pl)); $n_iku++;
+                }
+            }
+            $info_total['iku']++;
+            $info_total['dokumen'] += $n_iku;
+        }
+        $zip->close();
+    } catch (Throwable $e) {
+        error_log('[SOKAB paket_dokumen] ' . $e->getMessage());
+        @$zip->close(); @unlink($zip_path);
+        json_err('Gagal menyusun paket dokumen: ' . $e->getMessage(), 500);
+    }
+
+    $nama_zip = "Paket_Dokumen_TW{$per['triwulan']}_{$per['tahun']}_" . ($pdf_fmt ? 'PDF' : 'Word') . '.zip';
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $nama_zip . '"');
+    header('Content-Length: ' . filesize($zip_path));
+    header('X-Paket-Info: ' . json_encode($info_total));
+    header('Access-Control-Expose-Headers: X-Paket-Info');
+    header('Cache-Control: no-store');
+    readfile($zip_path);
+    @unlink($zip_path);
+    exit;
+
 // ── Dokumentasi rapat: daftar foto untuk satu periode ────
 case 'dok_list':
     $pid = (int)($_GET['periode_id'] ?? 0);

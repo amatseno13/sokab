@@ -288,6 +288,7 @@ tr:hover td{background:#fffaf5}
             <button class="btn btn-ghost" id="btn-xlsx" onclick="exportKertasKerja()">📗 Export Kertas Kerja (.xlsx)</button>
             <button class="btn btn-ghost" id="btn-dsum-semua" onclick="unduhDokumenSumberSemua(false)">Dokumen Sumber — Semua IKU</button>
             <button class="btn btn-ghost" id="btn-dsum-tl-semua" onclick="unduhDokumenSumberSemua(true)">Dokumen Sumber TW Sebelumnya — Semua IKU</button>
+            <button class="btn btn-ghost" id="btn-paket" onclick="unduhPaketDokumen()" title="ZIP: tahun / TW / IKU / dokumen sumber, solusi kendala, tindak lanjut TW sebelumnya">Unduh Semua Dokumen (ZIP)</button>
             <span id="gen-status" style="font-size:.82rem;color:#aaa"></span>
         </div>
     </div>
@@ -801,6 +802,29 @@ async function unduhDokumenSumberSemua(tl) {
         URL.revokeObjectURL(a.href);
         let info = {}; try { info = JSON.parse(res.headers.get('X-Dokumen-Sumber-Info') || '{}'); } catch (e) {}
         toast(`Terunduh: ${nama}${info.iku ? ` (${info.iku} IKU, ${info.foto_terpasang || 0} foto)` : ''}`);
+    } catch (e) { toast(e.message, false); }
+    finally { btn.disabled = false; btn.textContent = teks; }
+}
+
+async function unduhPaketDokumen() {
+    const pid = periodeIdAktif();
+    if (!pid) { toast('Pilih triwulan dulu.', false); return; }
+    const format = typeof pilihFormat === 'function' ? await pilihFormat() : 'word';
+    if (!format) return;
+    const btn = document.getElementById('btn-paket');
+    const teks = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Menyusun… (beberapa menit)';
+    try {
+        const res = await fetch(`${API}?action=unduh_paket_dokumen&periode_id=${pid}${format === 'pdf' ? '&format=pdf' : ''}`);
+        await pastikanBerkas(res);
+        const blob = await res.blob();
+        const nama = ((res.headers.get('Content-Disposition') || '').match(/filename="(.+?)"/) || [])[1] || 'Paket_Dokumen.zip';
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob); a.download = nama;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(a.href);
+        let info = {}; try { info = JSON.parse(res.headers.get('X-Paket-Info') || '{}'); } catch (e) {}
+        toast(`Terunduh: ${nama}${info.dokumen ? ` (${info.iku} IKU, ${info.dokumen} dokumen, ${info.foto_terpasang || 0} foto)` : ''}`);
     } catch (e) { toast(e.message, false); }
     finally { btn.disabled = false; btn.textContent = teks; }
 }
