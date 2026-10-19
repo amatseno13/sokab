@@ -383,11 +383,30 @@ switch ($act) {
         $stmt->execute($argN);
         if ((int)$stmt->fetchColumn() >= 20) json_err('Maksimal 20 ' . ($pdf ? 'PDF' : 'foto') . ' per butir');
 
-        $dir = __DIR__ . '/../uploads/bukti_ro/';
-        if (!is_dir($dir)) @mkdir($dir, 0775, true);
-        if (!is_writable($dir)) json_err('Folder uploads/bukti_ro tidak writable', 500);
+        // Foto non-RO (id negatif) wajib membawa iku_kode supaya tidak bercampur antar IKU
+        $iku = $ro_master_id < 0 ? trim($_POST['iku_kode'] ?? '') : null;
+        if ($ro_master_id < 0 && $iku === '') json_err('iku_kode required');
 
-        $filename = 'ro' . $ro_master_id . '_p' . $periode_id . '_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext_by_mime[$mime];
+        // Folder: uploads/bukti_ro/{tahun}/TW{n}/{kode IKU}/ — mudah dicari per IKU per triwulan
+        $kode_folder = $iku;
+        if ($ro_master_id > 0) {
+            $st = $db->prepare("SELECT iku_kode FROM ck_ro_master WHERE id = ?");
+            $st->execute([$ro_master_id]);
+            $kode_folder = (string)$st->fetchColumn();
+        }
+        $st = $db->prepare("SELECT tahun, triwulan FROM ck_periode WHERE id = ?");
+        $st->execute([$periode_id]);
+        $per = $st->fetch(PDO::FETCH_ASSOC);
+        $sub = ($per && $kode_folder !== '')
+            ? (int)$per['tahun'] . '/TW' . $per['triwulan'] . '/' . preg_replace('/[^0-9A-Za-z.]+/', '_', $kode_folder) . '/'
+            : '';
+        $dir = __DIR__ . '/../uploads/bukti_ro/' . $sub;
+        if (!is_dir($dir)) @mkdir($dir, 0775, true);
+        if (!is_writable($dir)) json_err('Folder uploads/bukti_ro/' . $sub . ' tidak writable', 500);
+
+        // Nama file memuat nama asli (disingkat) supaya terbaca di File Manager; kode acak mencegah bentrok
+        $dasar = trim(preg_replace('/[^0-9A-Za-z]+/', '_', pathinfo($f['name'], PATHINFO_FILENAME)), '_');
+        $filename = ($dasar !== '' ? substr($dasar, 0, 40) . '_' : '') . 'ro' . $ro_master_id . '_p' . $periode_id . '_' . time() . '_' . bin2hex(random_bytes(3)) . '.' . $ext_by_mime[$mime];
         $dest = $dir . $filename;
         if (!move_uploaded_file($f['tmp_name'], $dest)) json_err('Gagal menyimpan foto ke server', 500);
 
@@ -395,10 +414,7 @@ switch ($act) {
         $stmt->execute([$ro_master_id, $periode_id]);
         $urutan = (int)$stmt->fetchColumn();
 
-        $file_path = 'uploads/bukti_ro/' . $filename;
-        // Foto non-RO (id negatif) wajib membawa iku_kode supaya tidak bercampur antar IKU
-        $iku = $ro_master_id < 0 ? trim($_POST['iku_kode'] ?? '') : null;
-        if ($ro_master_id < 0 && $iku === '') { @unlink($dest); json_err('iku_kode required'); }
+        $file_path = 'uploads/bukti_ro/' . $sub . $filename;
         $stmt = $db->prepare("
             INSERT INTO ck_ro_bukti_foto (ro_master_id, periode_id, " . ($iku ? 'iku_kode, ' : '') . "file_path, original_name, keterangan, urutan, uploaded_by)
             VALUES (?, ?, " . ($iku ? '?, ' : '') . "?, ?, ?, ?, ?)
