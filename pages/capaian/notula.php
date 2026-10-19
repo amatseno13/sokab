@@ -569,8 +569,8 @@ function renderPreview(r) {
                 <td class="num">${i.target_pk} ${i.satuan}</td>
                 <td class="num">${i.alokasi_tw || '—'}</td>
                 <td class="num">${i.real_tw || '—'}</td>
-                <td class="num">${i.capaian_tw || '—'}</td>
-                <td class="num">${i.capaian_pk || '—'}</td>
+                <td class="num">${i.capaian_tw || '-'}</td>
+                <td class="num">${i.capaian_pk || '-'}</td>
                 <td><button type="button" class="pill klik ${st}" title="Klik untuk melihat bagian yang belum terisi" onclick="keteranganIKU('${i.kode}')">${lbl}</button></td>
             </tr>`;
         });

@@ -361,8 +361,8 @@ function susunPayloadDokumenSumber(PDO $db, int $pid, string $kode, string $mode
         'satuan'       => (string)$r['satuan'],
         'alokasi_tw'   => $fmt($alokasi),
         'real_tw'      => $realisasi === null ? '' : $fmt($realisasi),
-        'capaian_tw'   => $cap_tw === null ? '' : $fmt($cap_tw),
-        'capaian_pk'   => $cap_pk === null ? '' : $fmt($cap_pk),
+        'capaian_tw'   => $cap_tw === null ? '-' : $fmt($cap_tw),   // realisasi/pembagi tak terhitung → strip, bukan 0
+        'capaian_pk'   => $cap_pk === null ? '-' : $fmt($cap_pk),   // realisasi/pembagi tak terhitung → strip, bukan 0
         'kendala'      => (string)$r['kendala'],
         'solusi'       => (string)$r['solusi'],
         'rtl'          => (string)$r['rtl'],
@@ -660,8 +660,8 @@ case 'generate_db':
             'satuan'       => (string)$r['satuan'],
             'alokasi_tw'   => $fmt($alokasi),
             'real_tw'      => $realisasi === null ? '' : $fmt($realisasi),
-            'capaian_tw'   => $cap_tw === null ? '' : $fmt($cap_tw),
-            'capaian_pk'   => $cap_pk === null ? '' : $fmt($cap_pk),
+            'capaian_tw'   => $cap_tw === null ? '-' : $fmt($cap_tw),   // realisasi/pembagi tak terhitung → strip, bukan 0
+            'capaian_pk'   => $cap_pk === null ? '-' : $fmt($cap_pk),   // realisasi/pembagi tak terhitung → strip, bukan 0
             'kendala'      => (string)$r['kendala'],
             'solusi'       => (string)$r['solusi'],
             'rtl'          => (string)$r['rtl'],

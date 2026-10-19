@@ -178,6 +178,19 @@ function dxIsiSel(DOMDocument $doc, DOMElement $tc, string $teks): void {
     foreach (dxAnak($isi, 'r') as $r) $ps[0]->appendChild($r->cloneNode(true));
 }
 
+/**
+ * Timpa isi sel angka dengan teks baru, format run pertama dipertahankan.
+ * Sel kosong → dxIsiSel. Dipakai untuk kolom Target/Alokasi/Realisasi/Capaian yang di template berisi angka contoh (TW I).
+ */
+function dxTimpaSel(DOMDocument $doc, DOMElement $tc, string $teks): void {
+    $ts = [];
+    foreach (dxParagraf($tc) as $p) foreach ($p->getElementsByTagNameNS(W_NS, 't') as $t) $ts[] = $t;
+    if (!$ts) { dxIsiSel($doc, $tc, $teks); return; }
+    $ts[0]->setAttribute('xml:space', 'preserve');
+    $ts[0]->nodeValue = $teks;
+    for ($i = 1; $i < count($ts); $i++) $ts[$i]->nodeValue = '';
+}
+
 /** Sisipkan teks setelah $acuan, satu paragraf per baris (urutan terjaga). */
 function dxSisipBaris(DOMDocument $doc, DOMElement $acuan, string $teks, bool $link = false): void {
     foreach (preg_split('/\r\n|\r|\n/', $teks) as $baris) {
@@ -608,9 +621,9 @@ function isiNotulaDocx(array $data, string $template, string $output): array {
                 $kolom = [2 => $targetPk, 3 => $nilai('alokasi_tw'), 4 => $nilai('real_tw'),
                           5 => $nilai('capaian_tw'), 6 => $nilai('capaian_pk')];
                 foreach ($kolom as $pos => $isi) {
-                    if (isset($sel[$pos]) && trim(dxTeks($sel[$pos])) === '' && $isi !== '') {
-                        dxIsiSel($doc, $sel[$pos], $isi);
-                    }
+                    if (!isset($sel[$pos])) continue;
+                    if (trim(dxTeks($sel[$pos])) === '') { if ($isi !== '') dxIsiSel($doc, $sel[$pos], $isi); }
+                    else dxTimpaSel($doc, $sel[$pos], $isi !== '' ? $isi : '-');   // angka contoh template diganti nilai periode ini
                 }
             }
 
