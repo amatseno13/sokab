@@ -737,10 +737,7 @@ async function generateNotula() {
         const res = await fetch(endpoint, { method: 'POST', body: fd });
         const ct  = res.headers.get('Content-Type') || '';
 
-        if (ct.includes('application/json')) {
-            const err = await res.json();
-            throw new Error(err.message || 'Gagal generate');
-        }
+        await pastikanBerkas(res);
 
         const blob = await res.blob();
         const disp = res.headers.get('Content-Disposition') || '';
@@ -795,7 +792,7 @@ async function unduhDokumenSumberSemua(tl) {
     btn.disabled = true; btn.textContent = 'Menyusun… (bisa beberapa saat)';
     try {
         const res = await fetch(`${API}?action=generate_dokumen_sumber_semua&periode_id=${pid}${tl ? '&mode=tl' : ''}${format === 'pdf' ? '&format=pdf' : ''}`);
-        if ((res.headers.get('Content-Type') || '').includes('application/json')) throw new Error((await res.json()).message || 'Gagal membuat dokumen');
+        await pastikanBerkas(res);
         const blob = await res.blob();
         const nama = ((res.headers.get('Content-Disposition') || '').match(/filename="(.+?)"/) || [])[1] || 'Bukti_Dokumen_Sumber_Semua_IKU';
         const a = document.createElement('a');
@@ -815,7 +812,7 @@ async function exportKertasKerja() {
     btn.disabled = true;
     try {
         const res = await fetch(`../../api/export_kertas_kerja.php?action=export&periode_id=${pid}`);
-        if ((res.headers.get('Content-Type') || '').includes('application/json')) throw new Error((await res.json()).message || 'Gagal export');
+        await pastikanBerkas(res);
         const blob = await res.blob();
         const nama = ((res.headers.get('Content-Disposition') || '').match(/filename="(.+?)"/) || [])[1] || 'Kertas_Kerja.xlsx';
         const a = document.createElement('a');

@@ -319,6 +319,9 @@ async function exportExcel() {
             const err = await res.json();
             throw new Error(err.message || 'Gagal export');
         }
+        if (!res.ok || /text\/(html|plain)/.test(res.headers.get('Content-Type') || '')) {
+            throw new Error('Server mengirim galat, bukan berkas (HTTP ' + res.status + ')');
+        }
 
         const blob = await res.blob();
         const disp = res.headers.get('Content-Disposition') || '';

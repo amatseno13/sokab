@@ -72,3 +72,16 @@ function pilihFormat() {
         }
     });
 }
+
+// Pastikan respons unduhan benar-benar berkas (bukan halaman galat PHP yang tersimpan sebagai .pdf/.docx lalu tak bisa dibuka)
+async function pastikanBerkas(res) {
+    const ct = res.headers.get('Content-Type') || '';
+    if (ct.includes('application/json')) {
+        const err = await res.json();
+        throw new Error(err.message || 'Gagal membuat dokumen');
+    }
+    if (!res.ok || /text\/(html|plain)/.test(ct)) {
+        const t = (await res.text()).replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+        throw new Error('Server mengirim galat, bukan berkas (HTTP ' + res.status + ')' + (t ? ': ' + t : ''));
+    }
+}

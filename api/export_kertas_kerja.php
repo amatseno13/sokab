@@ -12,6 +12,7 @@
  */
 
 session_start();
+ini_set('display_errors', '0');   // notice/warning tercetak ke isi PDF/DOCX/XLSX → berkas rusak; tetap tercatat di log
 require_once __DIR__ . '/../includes/check_session.php';
 require_once __DIR__ . '/../config/database.php';
 require_once __DIR__ . '/../includes/xlsx_kertas_kerja.php';

@@ -913,10 +913,7 @@ async function generateDokumenSumber(periodeId, btnId, statusId, jenis = '') {
         const res = await fetch(`${API_NOTULA}?${query}`);
         const ct = res.headers.get('Content-Type') || '';
 
-        if (ct.includes('application/json')) {
-            const err = await res.json();
-            throw new Error(err.message || 'Gagal generate');
-        }
+        await pastikanBerkas(res);
 
         const blob = await res.blob();
         const disp = res.headers.get('Content-Disposition') || '';
