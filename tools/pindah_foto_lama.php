@@ -1,6 +1,6 @@
 <?php
 /**
- * SOKAB — pindahkan file bukti lama ke struktur uploads/bukti_ro/{tahun}/TW{n}/{kode IKU}/
+ * SOKAB — pindahkan file bukti lama ke struktur uploads/bukti_ro/{tahun}/TW{n}/{kode IKU}/{foto|pdf}/
  *
  * Tujuan folder dibaca dari database (ck_ro_bukti_foto → periode + IKU), bukan ditebak dari nama file.
  * Aman diulang: baris yang sudah berada di subfolder dilewati. File yang tidak ada di disk dilaporkan, tidak disentuh.
@@ -43,20 +43,23 @@ $n = ['pindah' => 0, 'sudah' => 0, 'hilang' => 0, 'tanpa_iku' => 0, 'gagal' => 0
 foreach ($rows as $r) {
     $path = (string)$r['file_path'];
     if (strpos($path, $awal) !== 0) continue;                      // bukan milik folder ini
-    $sisa = substr($path, strlen($awal));
-    if (strpos($sisa, '/') !== false) { $n['sudah']++; continue; } // sudah di subfolder
+    $sisa = basename($path);
 
     $kode = $r['ro_master_id'] > 0 ? (string)$r['iku_ro'] : (string)$r['iku_kode'];
-    if ($kode === '') { $kode = '_tanpa_IKU'; $n['tanpa_iku']++; echo "IKU tak diketahui → _tanpa_IKU  #{$r['id']} $path\n"; }   // baris lama sebelum kolom iku_kode ada
+    $tanpaIku = ($kode === '');
+    if ($tanpaIku) $kode = '_tanpa_IKU';   // baris lama sebelum kolom iku_kode ada
+
+    $jenis  = preg_match('/\.pdf$/i', $sisa) ? 'pdf' : 'foto';
+    $sub    = (int)$r['tahun'] . '/TW' . $r['triwulan'] . '/' . preg_replace('/[^0-9A-Za-z.]+/', '_', $kode) . '/' . $jenis . '/';
+    $baru   = $awal . $sub . $sisa;
+    if ($path === $baru) { $n['sudah']++; continue; }   // sudah di tempat yang benar
+    if ($tanpaIku) { $n['tanpa_iku']++; echo "IKU tak diketahui → _tanpa_IKU  #{$r['id']} $path\n"; }
 
     $asal = $root . '/' . $path;
     if (!is_file($asal)) { $n['hilang']++; echo "HILANG di disk   #{$r['id']} $path\n"; continue; }
+    $tujuan = $root . '/' . $baru;
 
-    $sub    = (int)$r['tahun'] . '/TW' . $r['triwulan'] . '/' . preg_replace('/[^0-9A-Za-z.]+/', '_', $kode) . '/';
-    $tujuan = $root . '/' . $awal . $sub . $sisa;
-    $baru   = $awal . $sub . $sisa;
-
-    if (!$jalankan) { $n['pindah']++; echo "AKAN pindah      #{$r['id']} $sisa  →  $sub\n"; continue; }
+    if (!$jalankan) { $n['pindah']++; echo "AKAN pindah      #{$r['id']} $path  →  $baru\n"; continue; }
 
     if (!is_dir(dirname($tujuan)) && !@mkdir(dirname($tujuan), 0775, true)) { $n['gagal']++; echo "GAGAL buat folder #{$r['id']} $sub\n"; continue; }
     if (!@rename($asal, $tujuan)) { $n['gagal']++; echo "GAGAL pindah     #{$r['id']} $path\n"; continue; }

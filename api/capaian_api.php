@@ -387,7 +387,7 @@ switch ($act) {
         $iku = $ro_master_id < 0 ? trim($_POST['iku_kode'] ?? '') : null;
         if ($ro_master_id < 0 && $iku === '') json_err('iku_kode required');
 
-        // Folder: uploads/bukti_ro/{tahun}/TW{n}/{kode IKU}/ — mudah dicari per IKU per triwulan
+        // Folder: uploads/bukti_ro/{tahun}/TW{n}/{kode IKU}/{foto|pdf}/ — mudah dicari per IKU per triwulan
         $kode_folder = $iku;
         if ($ro_master_id > 0) {
             $st = $db->prepare("SELECT iku_kode FROM ck_ro_master WHERE id = ?");
@@ -400,6 +400,7 @@ switch ($act) {
         $sub = ($per && $kode_folder !== '')
             ? (int)$per['tahun'] . '/TW' . $per['triwulan'] . '/' . preg_replace('/[^0-9A-Za-z.]+/', '_', $kode_folder) . '/'
             : '';
+        if ($sub !== '') $sub .= $pdf ? 'pdf/' : 'foto/';   // foto dan PDF laporan dipisah di dalam folder IKU
         $dir = __DIR__ . '/../uploads/bukti_ro/' . $sub;
         if (!is_dir($dir)) @mkdir($dir, 0775, true);
         if (!is_writable($dir)) json_err('Folder uploads/bukti_ro/' . $sub . ' tidak writable', 500);
