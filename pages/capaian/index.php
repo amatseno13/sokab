@@ -210,12 +210,21 @@ async function loadIKU() {
     document.getElementById('badge-tw').textContent = `${selTxt} — ${thn}`;
     document.getElementById('iku-container').innerHTML = '<div class="loading"><div class="spinner"></div>Memuat...</div>';
 
-    const [r1, r2] = await Promise.all([
-        fetch(`${API}?action=list_iku&periode_id=${pid}`).then(r => r.json()),
-        fetch(`${API}?action=summary&periode_id=${pid}`).then(r => r.json()),
-    ]);
+    let r1, r2;
+    try {
+        [r1, r2] = await Promise.all([
+            fetch(`${API}?action=list_iku&periode_id=${pid}`).then(r => r.json()),
+            fetch(`${API}?action=summary&periode_id=${pid}`).then(r => r.json()),
+        ]);
+    } catch (e) {
+        r1 = { success: false, message: 'Respons server bukan JSON (kemungkinan error PHP atau file belum ter-upload)' };
+    }
 
-    if (!r1.success) return;
+    if (!r1.success) {
+        document.getElementById('iku-container').innerHTML =
+            '<div class="loading">Gagal memuat daftar IKU: ' + (r1.message || 'tidak diketahui') + '</div>';
+        return;
+    }
 
     // Update progress
     const { total, isi } = r2;
