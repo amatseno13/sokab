@@ -463,7 +463,7 @@ switch ($act) {
         $ro_master_id = (int)($b['ro_master_id'] ?? 0);
         $tipe         = $b['tipe'] ?? '';
         $parent_id    = (int)($b['parent_id'] ?? 0);
-        if (!$periode_id || !$iku_kode || $ro_master_id <= 0) json_err('periode_id + iku_kode + ro_master_id required');
+        if (!$periode_id || !$iku_kode || ($ro_master_id <= 0 && $ro_master_id !== -1)) json_err('periode_id + iku_kode + ro_master_id required');   // -1 = kegiatan IKU tanpa RO
         if (!in_array($tipe, ['kegiatan', 'sub', 'tahap'], true)) json_err('tipe tidak valid');
 
         // Aturan susunan: kegiatan di akar; sub di bawah kegiatan; tahapan di bawah kegiatan ATAU sub

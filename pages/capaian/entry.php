@@ -516,7 +516,13 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
             </tbody>
         </table>
         <?php else: ?>
-        <p class="no-ro">Tidak ada Rincian Output untuk IKU ini.</p>
+        <p class="no-ro">Tidak ada Rincian Output untuk IKU ini. Kegiatan yang dilakukan di triwulan berjalan tetap bisa diisi di bawah.</p>
+        <?php /* Tanpa RO: uraian kegiatan memakai kunci ro_master_id = -1 (ck_uraian_node), dibaca generator dokumen sebagai "RO" tanpa nama */ ?>
+        <div class="uraian-row" style="background:#faf7f2;padding:.8rem 1rem;border:1px solid var(--line, #e5ded3);border-radius:8px">
+            <div style="font-size:.78rem;font-weight:700;margin-bottom:.4rem">Uraian Kegiatan <span style="font-weight:400;color:var(--ink-faint)">(kegiatan, sub kegiatan, dan tahapan; foto bukti dipasang di tiap butir)</span></div>
+            <div class="node-root" id="node-root--1"></div>
+            <button type="button" class="btn-foto" onclick="tambahNode(-1, 'kegiatan', 0)">➕ Tambah Kegiatan</button>
+        </div>
         <?php endif; ?>
 
     </div>
