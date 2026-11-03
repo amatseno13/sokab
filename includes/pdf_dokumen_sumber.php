@@ -14,6 +14,8 @@ class PdfDokumenSumber extends FPDF {
     const W = 180;      // lebar isi (mm)
     public int $fotoOk = 0;
     public array $fotoGagal = [];
+    public float $inset = 0;          // jarak teks dari tepi kiri/kanan (mm) saat di dalam bingkai
+    public ?float $bingkaiY = null;   // y awal bingkai di halaman berjalan; null = tak ada bingkai
     private array $tmp = [];
 
     function __construct() {
@@ -49,8 +51,8 @@ class PdfDokumenSumber extends FPDF {
     /** Paragraf: MultiCell dengan indent kiri (mm) dan jarak bawah (mm). */
     function para(string $txt, float $size = 10, bool $bold = false, string $align = 'L', float $indent = 0, float $after = 2): void {
         $this->font($size, $bold);
-        $this->SetX(self::M + $indent);
-        $this->MultiCell(self::W - $indent, $size * 0.5, self::t($txt), 0, $align);
+        $this->SetX(self::M + $this->inset + $indent);
+        $this->MultiCell(self::W - 2 * $this->inset - $indent, $size * 0.5, self::t($txt), 0, $align);
         $this->Ln($after);
     }
 
@@ -82,8 +84,9 @@ class PdfDokumenSumber extends FPDF {
         return $this->tmp[] = $f;
     }
 
-    /** Pasang daftar foto (maks 11×8 cm, di tengah) beserta keterangannya. */
+    /** Pasang daftar foto DUA per baris (hemat halaman, cocok untuk screenshot WA), maks 85×110 mm per foto, beserta keterangannya. */
     function foto(array $list): void {
+        $siap = [];
         foreach ($list as $f) {
             $path = $f['path'] ?? '';
             if (!$path || !is_file($path)) { $this->fotoGagal[] = $path ?: '(kosong)'; continue; }
@@ -92,20 +95,48 @@ class PdfDokumenSumber extends FPDF {
             if (!in_array($u['mime'] ?? '', ['image/jpeg', 'image/png'], true)) { $this->fotoGagal[] = $path . ' (tipe tidak didukung)'; continue; }
             $berkas = $this->jpegSementara($path, $u['mime'], $u[0], $u[1]);
             if (!$berkas) { $this->fotoGagal[] = $path . ' (gagal diproses)'; continue; }
-
-            $w = 110; $h = $w * $u[1] / $u[0];
-            if ($h > 80) { $h = 80; $w = $h * $u[0] / $u[1]; }
-            if ($this->GetY() + $h > $this->PageBreakTrigger) $this->AddPage();
-            try {
-                $this->Image($berkas, (210 - $w) / 2, $this->GetY(), $w, $h, 'JPG');
-            } catch (Throwable $e) { $this->fotoGagal[] = $path . ' (' . $e->getMessage() . ')'; continue; }
-            $this->SetY($this->GetY() + $h + 2);
-            $this->fotoOk++;
-
-            $ket = trim((string)($f['keterangan'] ?? ''));
-            if ($ket !== '') { $this->SetTextColor(100, 116, 139); $this->para($ket, 8.5, false, 'C', 0, 3); $this->SetTextColor(0); }
-            else $this->Ln(3);
+            $w = 85; $h = $w * $u[1] / $u[0];
+            if ($h > 110) { $h = 110; $w = $h * $u[0] / $u[1]; }
+            $siap[] = ['berkas' => $berkas, 'w' => $w, 'h' => $h, 'ket' => trim((string)($f['keterangan'] ?? '')), 'path' => $path];
         }
+        foreach (array_chunk($siap, 2) as $pasang) {
+            $tinggi = max(array_column($pasang, 'h'));
+            if ($this->GetY() + $tinggi > $this->PageBreakTrigger) $this->AddPage();
+            $y = $this->GetY();
+            $lajur = count($pasang) === 1 ? [105] : [self::M + 45, self::M + 135];   // pusat tiap lajur (mm)
+            foreach ($pasang as $i => $g) {
+                try {
+                    $this->Image($g['berkas'], $lajur[$i] - $g['w'] / 2, $y, $g['w'], $g['h'], 'JPG');
+                    $this->fotoOk++;
+                } catch (Throwable $e) { $this->fotoGagal[] = $g['path'] . ' (' . $e->getMessage() . ')'; }
+            }
+            $this->SetY($y + $tinggi + 2);
+            foreach ($pasang as $g) if ($g['ket'] !== '') {   // keterangan ditulis berurutan di bawah baris foto
+                $this->SetTextColor(100, 116, 139); $this->para($g['ket'], 8.5, false, 'C', 0, 1); $this->SetTextColor(0);
+            }
+            $this->Ln(3);
+        }
+    }
+
+    /** Bingkai terbuka: sisi kiri/kanan digambar per halaman (Footer), sisi bawah saat ditutup. */
+    function bukaBingkai(float $y): void { $this->bingkaiY = $y; $this->inset = 2; }
+    function tutupBingkai(): void {
+        if ($this->bingkaiY === null) return;
+        $y = $this->GetY();
+        $this->Line(self::M, $this->bingkaiY, self::M, $y); $this->Line(self::M + self::W, $this->bingkaiY, self::M + self::W, $y);
+        $this->Line(self::M, $y, self::M + self::W, $y);
+        $this->bingkaiY = null; $this->inset = 0;
+    }
+    function Footer(): void {
+        if ($this->bingkaiY === null) return;
+        $y = $this->GetY();
+        $this->Line(self::M, $this->bingkaiY, self::M, $y); $this->Line(self::M + self::W, $this->bingkaiY, self::M + self::W, $y);
+        $this->Line(self::M, $y, self::M + self::W, $y);   // garis bawah di setiap halaman
+    }
+    function Header(): void {   // halaman lanjutan: bingkai dibuka lagi dengan garis atas
+        if ($this->bingkaiY === null) return;
+        $this->bingkaiY = self::M;
+        $this->Line(self::M, self::M, self::M + self::W, self::M);
     }
 
     function batasHalaman(): float { return $this->PageBreakTrigger; }
@@ -144,17 +175,41 @@ function buatDokumenSumberPdf(array $dAsal, ?array &$info = null): string {
             if ($it['idx']) $p->foto($d['solusi_foto'][$it['idx']] ?? []);
         }
     } elseif ($tl) {
-        // Tindak Lanjut TW sebelumnya: hanya judul, indikator, poin RTL beserta dokumentasinya
+        // Tindak Lanjut TW sebelumnya: format "Laporan Pelaksanaan Tindak Lanjut Monitoring Kinerja"
         if (empty($d['tanpa_judul'])) {   // dokumen gabungan: judul cukup di halaman pertama
-            $p->para('Bukti Dokumen Sumber Tindak Lanjut TW ' . ($d['triwulan'] ?? '') . ' ' . ($d['tahun'] ?? ''), 13, true, 'C', 0, 0.5);
-            $p->para((string)($d['satker'] ?? ''), 13, true, 'C', 0, 3);
+            $p->para("LAPORAN PELAKSANAAN TINDAK LANJUT\nMONITORING KINERJA TRIWULAN " . ($d['triwulan'] ?? '') . ' TAHUN ' . ($d['tahun'] ?? '') . "\nBPS KOTA BIMA", 12, true, 'C', 0, 6);
         }
-        $p->para(trim(($d['kode'] ?? '') . ' ' . ($d['nama'] ?? '')), 12, true, 'C', 0, 5);
+        $x0 = PdfDokumenSumber::M;
+        $y = $p->GetY();
+        $p->font(10);
+        $h1 = max(7, $p->baris(180 - 36 - 2, (string)($d['sasaran_nama'] ?? '-')) * 5 + 2);
+        $p->kotak($x0, $y, 36, $h1, 'Sasaran', 'L', true, true, 10);
+        $p->kotak($x0 + 36, $y, 144, $h1, (string)($d['sasaran_nama'] ?? '-'), 'L', true, true, 10);
+        $y += $h1;
+        $h2 = max(12, $p->baris(144 - 2, (string)($d['nama'] ?? '')) * 5 + 2);
+        $p->kotak($x0, $y, 36, $h2, "Indikator Kinerja\n" . ($d['kode'] ?? ''), 'L', false, true, 10);
+        $p->kotak($x0 + 36, $y, 144, $h2, (string)($d['nama'] ?? ''), 'L', false, false, 10);
+        $y += $h2;
+        $progres = ($d['progres'] ?? '') !== '' ? $d['progres'] . ' Persen' : '-';
+        // Bingkai membentang dari Aksi Tindak Lanjut sampai bukti paling akhir
+        if ($y + 20 > $p->batasHalaman()) { $p->AddPage(); $y = $p->GetY(); $p->Line($x0, $y, $x0 + 180, $y); }
+        $p->SetY($y + 2);
+        $p->bukaBingkai($y);
+        $p->para('Aksi Tindak Lanjut :', 10, true, 'L', 0, 1);
+        foreach (dsBacaList2((string)($d['rtl'] ?? '')) ?: ['-'] as $t) $p->para($t, 10, false, 'J', 0, 1);
+        $p->Ln(2);
+        $p->para('PIC Tindak Lanjut: ' . ($d['pic'] ?: '-'), 10, false, 'L', 0, 1);
+        $p->para('Batas Waktu Tindak Lanjut: ' . ($d['batas'] ?: '-'), 10, false, 'L', 0, 1);
+        $p->para('Progres Pelaksanaan: ' . $progres, 10, false, 'L', 0, 3);
+
+        $p->para('Bukti Tindak Lanjut :', 10, true, 'L', 0, 1);
+        $p->para('Tindak lanjut tersebut telah dilaksanakan pada Triwulan ' . ($d['tw_laksana'] ?? '') . ' ' . ($d['tahun_laksana'] ?? '') . ' yang akan dirincikan sebagai berikut :', 10, false, 'J', 0, 3);
         foreach (dsSusunBukti($d['ro_list'] ?? [], true) as [$teks, $foto, $judul, $indent]) {
             if (!$judul) $roTerisi++;
             $p->para($teks, $judul ? 11 : 10, $judul, 'L', $indent * 10, 2);
             $p->foto($foto);
         }
+        $p->tutupBingkai();
     } else {
         // ── Judul ──
         if (empty($d['tanpa_judul'])) {   // dokumen gabungan: judul cukup di halaman pertama

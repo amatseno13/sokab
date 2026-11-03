@@ -568,7 +568,24 @@ body{font-family:'Inter','Segoe UI',system-ui,sans-serif;background:var(--bg);co
         // "-nomor poin" saja bertabrakan antar IKU (IKU lain menimpa / baris milik IKU lain tak terbaca).
         // Kunci baru = -(urutan IKU*1000 + nomor poin); kunci lama (-nomor poin) hanya dibaca sebagai cadangan.
         $kunci_iku = (int)$master['row_order'] * 1000;
+        // Progres pelaksanaan TL (%): satu angka per IKU, disimpan di ck_entry_ro (periode TW lalu) dengan kunci -(900000+row_order)
+        // — di luar rentang kunci narasi poin (-(row_order*1000+poin)), jadi tak perlu migrasi tabel.
+        $kunci_progres = -(900000 + (int)$master['row_order']);
+        $stmt = $db->prepare("SELECT progres FROM ck_entry_ro WHERE periode_id = ? AND ro_master_id = ?");
+        $stmt->execute([$periode_sblm['id'], $kunci_progres]);
+        $pg = $stmt->fetchColumn();
+        $progres_tl = ($pg === false || $pg === null) ? '' : rtrim(rtrim(number_format((float)$pg * 100, 2, '.', ''), '0'), '.');
         ?>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Progres Pelaksanaan Tindak Lanjut (%)</label>
+                <input type="number" id="progres_tl" min="0" max="100" step="1" placeholder="0–100"
+                    data-nid="<?= $kunci_progres ?>" data-awal="<?= htmlspecialchars($progres_tl) ?>"
+                    value="<?= htmlspecialchars($progres_tl) ?>" oninput="markDirty()">
+                <div class="ikss-hint">Seberapa jauh Rencana Tindak Lanjut TW lalu sudah dilaksanakan. Tampil di dokumen tindak lanjut.</div>
+            </div>
+        </div>
+
         <?php if (count($poin_sblm) > 0): ?>
         <table class="ro-table ro-table-sblm">
             <thead>
@@ -734,6 +751,24 @@ async function simpanSemua() {
             }).then(r => r.json());
             if (!r4.success) throw new Error('Gagal simpan uraian kegiatan: ' + r4.message);
             ta.dataset.awal = ta.value;
+        }
+
+        // Progres pelaksanaan tindak lanjut (Bagian 4) — hanya bila berubah
+        const pg = document.getElementById('progres_tl');
+        if (pg && pg.value !== pg.dataset.awal) {
+            const v = Math.min(100, Math.max(0, parseFloat(pg.value)));
+            const r5 = await fetch(`${API}?action=save_ro`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    periode_id:   PERIODE_ID_SBLM,
+                    ro_master_id: parseInt(pg.dataset.nid),
+                    iku_kode:     IKU_KODE,
+                    progres:      isNaN(v) ? null : (v / 100).toFixed(6),
+                })
+            }).then(r => r.json());
+            if (!r5.success) throw new Error('Gagal simpan progres tindak lanjut: ' + r5.message);
+            pg.dataset.awal = pg.value;
         }
 
         // Narasi tindak lanjut per poin (Bagian 4) — hanya yang berubah

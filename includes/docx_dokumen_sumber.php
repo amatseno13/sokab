@@ -85,7 +85,7 @@ function dsSel(array $innerParas, array $opts = []): string {
     if (isset($opts['gridspan'])) $tcPr .= '<w:gridSpan w:val="' . (int)$opts['gridspan'] . '"/>';
     if (isset($opts['vmerge']))   $tcPr .= '<w:vMerge w:val="' . dsEsc($opts['vmerge']) . '"/>';
     if (isset($opts['shade']))    $tcPr .= '<w:shd w:val="clear" w:color="auto" w:fill="' . dsEsc($opts['shade']) . '"/>';
-    $tcPr .= '<w:vAlign w:val="center"/></w:tcPr>';
+    $tcPr .= '<w:vAlign w:val="' . (empty($opts['valign_top']) ? 'center' : 'top') . '"/></w:tcPr>';
 
     $isi = $innerParas ? implode('', $innerParas) : dsP('');
     return '<w:tc xmlns:w="' . DS_W_NS . '">' . $tcPr . $isi . '</w:tc>';
@@ -97,7 +97,7 @@ function dsBaris(array $selList): string {
 }
 
 /** Tabel penuh dari list baris + lebar kolom (cm). */
-function dsTabel(array $barisList, array $lebarKolomCm): string {
+function dsTabel(array $barisList, array $lebarKolomCm, bool $tanpaBorder = false): string {
     $grid = '';
     foreach ($lebarKolomCm as $w) $grid .= '<w:gridCol w:w="' . dsTwips($w) . '"/>';
 
@@ -108,6 +108,7 @@ function dsTabel(array $barisList, array $lebarKolomCm): string {
             . '<w:insideH w:val="single" w:sz="4" w:space="0" w:color="000000"/>'
             . '<w:insideV w:val="single" w:sz="4" w:space="0" w:color="000000"/>';
 
+    if ($tanpaBorder) $border = '';
     return '<w:tbl xmlns:w="' . DS_W_NS . '">'
          . '<w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders>' . $border . '</w:tblBorders>'
          . '<w:tblLayout w:type="fixed"/></w:tblPr>'
@@ -143,6 +144,11 @@ function dsSisip(DOMDocument $doc, DOMNode $acuan, string $xml): void {
     $frag = $doc->createDocumentFragment();
     $frag->appendXML($xml);
     $acuan->parentNode->insertBefore($frag, $acuan);
+}
+
+/** Baris-baris teks apa adanya (nomor tulisan sendiri dipertahankan), baris kosong dibuang. */
+function dsBacaList2(string $teks): array {
+    return array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $teks)), fn($b) => $b !== ''));
 }
 
 /** Pecah teks kendala/solusi jadi list bernomor (satu baris = satu poin). */
@@ -279,7 +285,10 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
     $newRels = ''; // Relationship XML tambahan, disatukan di akhir
 
     // Pasang daftar foto sebagai gambar di dokumen (dipakai bagian bukti & bagian solusi kendala)
-    $pasangFoto = function (array $fotoList) use ($doc, $sectPr, $zip, &$ridBerikut, &$imgIndex, &$newRels, &$fotoTerpasang, &$fotoGagal) {
+    // Foto dipasang DUA per baris (tabel tanpa border) supaya hemat halaman — terutama screenshot WA yang tinggi.
+    // Foto ganjil terakhir dipasang sendiri di tengah.
+    $pasangFoto = function (array $fotoList, ?array &$out = null) use ($doc, $sectPr, $zip, &$ridBerikut, &$imgIndex, &$newRels, &$fotoTerpasang, &$fotoGagal) {
+        $siap = [];
         foreach ($fotoList as $foto) {
             $path = $foto['path'] ?? '';
             if (!$path || !is_file($path)) { $fotoGagal[] = $path ?: '(kosong)'; continue; }
@@ -296,34 +305,34 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
             $rid = 'rId' . $ridBerikut++;
             $namaMedia = "image{$imgIndex}.{$extZip}";
             $zip->addFromString("word/media/$namaMedia", file_get_contents($path));
-
             $newRels .= '<Relationship Id="' . $rid . '" '
                       . 'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
                       . 'Target="media/' . $namaMedia . '"/>';
 
-            // Batasi lebar MAUPUN tinggi — foto HP kebanyakan potret (tinggi > lebar).
-            // Kalau cuma lebar dibatasi (11cm), foto potret jadi setinggi >14cm dan
-            // memenuhi lebih dari separuh halaman. Dipilih batas mana yang lebih ketat,
-            // supaya hasilnya selalu proporsional dan tidak pernah melebihi kotak 11×8cm.
-            $maxW = dsEmu(11.0);
-            $maxH = dsEmu(8.0);
+            // Batasi lebar DAN tinggi: kotak 8,3×11cm (muat dua berdampingan di lebar 18cm; potret WA tetap terbaca).
+            $maxW = dsEmu($out !== null ? 7.5 : 8.3);   // di dalam sel bingkai: lebih sempit (sel tabel bersarang + margin sel)
+            $maxH = dsEmu(11.0);
             $cx = $maxW;
             $cy = (int)round($maxW * $hPx / $wPx);
-            if ($cy > $maxH) {
-                $cy = $maxH;
-                $cx = (int)round($maxH * $wPx / $hPx);
-            }
-
-            dsSisip($doc, $sectPr, dsGambar($rid, $cx, $cy, $imgIndex));
-            $imgIndex++;
-            $fotoTerpasang++;
+            if ($cy > $maxH) { $cy = $maxH; $cx = (int)round($maxH * $wPx / $hPx); }
 
             $ket = trim((string)($foto['keterangan'] ?? ''));
-            if ($ket !== '') {
-                dsSisip($doc, $sectPr, dsP($ket, ['align' => 'center', 'color' => '64748B', 'size' => 8.5, 'space_after' => 10]));
-            } else {
-                dsSisip($doc, $sectPr, dsP('', ['space_after' => 6]));
-            }
+            $sel = [dsGambar($rid, $cx, $cy, $imgIndex)];
+            $sel[] = $ket !== '' ? dsP($ket, ['align' => 'center', 'color' => '64748B', 'size' => 8.5, 'space_after' => 6]) : dsP('', ['space_after' => 4]);
+            $siap[] = $sel;
+            $imgIndex++;
+            $fotoTerpasang++;
+        }
+        // $out != null: kumpulkan XML (untuk dimasukkan ke dalam sel tabel) alih-alih menyisipkan ke dokumen
+        $taruh = function (string $x) use (&$out, $doc, $sectPr) { if ($out !== null) $out[] = $x; else dsSisip($doc, $sectPr, $x); };
+        $lebarSel = $out !== null ? 8.1 : 8.8;
+        foreach (array_chunk($siap, 2) as $pasang) {
+            if (count($pasang) === 1) { foreach ($pasang[0] as $x) $taruh($x); continue; }
+            $taruh(dsTabel([dsBaris([
+                dsSel($pasang[0], ['width_cm' => $lebarSel]),
+                dsSel($pasang[1], ['width_cm' => $lebarSel]),
+            ])], [$lebarSel, $lebarSel], true));
+            $taruh(dsP('', ['space_after' => 2]));
         }
     };
 
@@ -362,18 +371,35 @@ function buatDokumenSumberDocx(array $data, string $templateKosong, string $outp
         continue;
     }
 
-    // ── Dokumen Tindak Lanjut TW sebelumnya: hanya judul, indikator, poin RTL beserta dokumentasinya ──
+    // ── Dokumen Tindak Lanjut TW sebelumnya: format "Laporan Pelaksanaan Tindak Lanjut Monitoring Kinerja" ──
     if (!empty($data['mode_tl'])) {
         if (empty($data['tanpa_judul'])) {   // dokumen gabungan: judul cukup di halaman pertama
-            dsSisip($doc, $sectPr, dsP('Bukti Dokumen Sumber Tindak Lanjut TW ' . ($data['triwulan'] ?? '') . ' ' . ($data['tahun'] ?? ''), ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 2]));
-            dsSisip($doc, $sectPr, dsP((string)($data['satker'] ?? ''), ['bold' => true, 'size' => 13, 'align' => 'center', 'space_after' => 8]));
+            foreach (['LAPORAN PELAKSANAAN TINDAK LANJUT', 'MONITORING KINERJA TRIWULAN ' . ($data['triwulan'] ?? '') . ' TAHUN ' . ($data['tahun'] ?? ''), 'BPS KOTA BIMA'] as $i => $j)
+                dsSisip($doc, $sectPr, dsP($j, ['bold' => true, 'size' => 12, 'align' => 'center', 'space_after' => $i === 2 ? 10 : 0]));
         }
-        dsSisip($doc, $sectPr, dsP(trim(($data['kode'] ?? '') . ' ' . ($data['nama'] ?? '')), ['bold' => true, 'size' => 12, 'align' => 'center', 'space_after' => 12]));
+        $lbl = fn($t) => ['text' => $t, 'bold' => true, 'size' => 10];
+        $baris = [
+            dsBaris([dsSel([dsP('Sasaran', ['bold' => true])], ['width_cm' => 3.2, 'shade' => 'F2F2F2']),
+                     dsSel([dsP((string)($data['sasaran_nama'] ?? '-'), ['bold' => true])], ['width_cm' => 13.8, 'shade' => 'F2F2F2'])]),
+            dsBaris([dsSel([dsParagraf([['text' => 'Indikator Kinerja', 'bold' => true, 'size' => 10], ['text' => (string)($data['kode'] ?? ''), 'bold' => true, 'size' => 10, 'br_before' => true]])], ['width_cm' => 3.2]),
+                     dsSel([dsP((string)($data['nama'] ?? ''))], ['width_cm' => 13.8])]),
+        ];
+        $isi = [dsP('Aksi Tindak Lanjut :', ['bold' => true, 'space_after' => 2])];
+        foreach (dsBacaList2((string)($data['rtl'] ?? '')) as $t) $isi[] = dsP($t, ['align' => 'both', 'space_after' => 2]);
+        $progres = ($data['progres'] ?? '') !== '' ? $data['progres'] . ' Persen' : '-';
+        foreach ([['PIC Tindak Lanjut', $data['pic'] ?: '-'], ['Batas Waktu Tindak Lanjut', $data['batas'] ?: '-'], ['Progres Pelaksanaan', $progres]] as [$k, $v])
+            $isi[] = dsParagraf([$lbl($k . ': '), ['text' => (string)$v, 'size' => 10]], ['space_before' => 4, 'space_after' => 2]);
+        // Bukti Tindak Lanjut ikut di dalam kotak: garis tabel berakhir setelah bukti paling akhir
+        $isi[] = dsP('Bukti Tindak Lanjut :', ['bold' => true, 'space_before' => 8, 'space_after' => 2]);
+        $isi[] = dsP('Tindak lanjut tersebut telah dilaksanakan pada Triwulan ' . ($data['tw_laksana'] ?? '') . ' ' . ($data['tahun_laksana'] ?? '') . ' yang akan dirincikan sebagai berikut :', ['align' => 'both', 'space_after' => 6]);
         foreach (dsSusunBukti($data['ro_list'] ?? [], true) as [$teks, $foto, $judul, $indent]) {
-            if ($judul) dsSisip($doc, $sectPr, dsP($teks, ['bold' => true, 'size' => 11, 'space_before' => 4, 'space_after' => 4]));
-            else { $roTerisi++; dsSisip($doc, $sectPr, dsP($teks, ['space_after' => 6, 'indent_cm' => $indent])); }
-            $pasangFoto($foto);
+            if ($judul) $isi[] = dsP($teks, ['bold' => true, 'space_before' => 4, 'space_after' => 4]);
+            else { $roTerisi++; $isi[] = dsP($teks, ['space_after' => 6, 'indent_cm' => $indent]); }
+            $pasangFoto($foto, $isi);
         }
+        $isi[] = dsP('', ['space_after' => 2]);   // sel tabel wajib diakhiri paragraf
+        $baris[] = dsBaris([dsSel($isi, ['width_cm' => 17.0, 'gridspan' => 2, 'valign_top' => true])]);
+        dsSisip($doc, $sectPr, dsTabel($baris, [3.2, 13.8]));
         continue;
     }
 

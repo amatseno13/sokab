@@ -240,7 +240,7 @@ function susunPayloadDokumenSumber(PDO $db, int $pid, string $kode, string $mode
 
     $batas = '';
     if (!empty($r['batas_waktu']) && $r['batas_waktu'] !== '0000-00-00') {
-        $bln = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+        $bln = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
         $ts = strtotime($r['batas_waktu']);
         $batas = date('j', $ts) . ' ' . $bln[(int)date('n', $ts)] . ' ' . date('Y', $ts);
     }
@@ -377,7 +377,21 @@ function susunPayloadDokumenSumber(PDO $db, int $pid, string $kode, string $mode
         'ro_list'      => $ro_list,
     ];
 
-    if (($mode ?? '') === 'tl') $payload['mode_tl'] = true;
+    if (($mode ?? '') === 'tl') {
+        $payload['mode_tl'] = true;
+        // Dokumen ini melaporkan pelaksanaan RTL TW $pid di TW berikutnya (TW berjalan): TW/tahun pelaksanaan,
+        // tautan bukti TL, dan progres (%) — progres disimpan di periode RTL dengan kunci -(900000+row_order), lihat entry.php.
+        $urut = ['I', 'II', 'III', 'IV'];
+        $payload['tw_laksana']    = $urut[$tw_idx % 4];
+        $payload['tahun_laksana'] = (int)$periode['tahun'] + ($tw_idx === 4 ? 1 : 0);
+        $stmt = $db->prepare("SELECT e.link_tl FROM ck_periode p JOIN ck_entry_iku e ON e.periode_id = p.id AND e.iku_kode = ? WHERE p.tahun = ? AND p.triwulan = ?");
+        $stmt->execute([$kode, $payload['tahun_laksana'], $payload['tw_laksana']]);
+        $payload['link_tl'] = (string)($stmt->fetchColumn() ?: '');
+        $stmt = $db->prepare("SELECT progres FROM ck_entry_ro WHERE periode_id = ? AND ro_master_id = ?");
+        $stmt->execute([$pid, -(900000 + (int)$r['row_order'])]);
+        $pg = $stmt->fetchColumn();
+        $payload['progres'] = ($pg === false || $pg === null) ? '' : $fmt((float)$pg * 100);
+    }
 
     // jenis=solusi: dokumen terpisah "Bukti Dokumen Sumber Solusi Dari Kendala".
     // Foto per poin solusi disimpan dengan ro_master_id = -(20000000 + nomor poin).
@@ -629,7 +643,7 @@ case 'generate_db':
         return $s === '' ? '0' : $s;
     };
 
-    $bln = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+    $bln = ['', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
     $iku_list = [];
     $terisi = 0;
 
